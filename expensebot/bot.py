@@ -147,10 +147,10 @@ class ExpenseBot:
         spreadsheet = gsheet.authorize(self._config).open_by_key(spreadsheet_id)
         sheet = spreadsheet.worksheet('2019 Gastos')
         cats = []
-        for val in sheet.col_values(1):
+        for row_num, val in enumerate(sheet.col_values(1)):
             if val == 'Total gastos':
                 break
-            if not val or val == 'Tipo':
+            if not val or row_num == 0:
                 continue
             cats.append(val)
         return cats
