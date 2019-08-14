@@ -202,9 +202,9 @@ class ExpenseBot:
         if currency != self._ref_currency:
             index = '{}{}'.format(currency, self._ref_currency)
             value_cell += ("*IFNA("
-                           "FILTER('2019 {0}'!B:B, MONTH('2019 {0}'!A:A) = MONTH(B{1}), DAY('2019 {0}'!A:A) = DAY(B{1})), "
-                           "FILTER('2019 {0}'!B:B, MONTH('2019 {0}'!A:A) = MONTH(B{1}), DAY('2019 {0}'!A:A) = MINUS(DAY(B{1}), 1))"
-                           ")".format(index, row_to_update))
+                           "FILTER('{2} {0}'!B:B, MONTH('{2} {0}'!A:A) = MONTH(B{1}), DAY('{2} {0}'!A:A) = DAY(B{1})), "
+                           "FILTER('{2} {0}'!B:B, MONTH('{2} {0}'!A:A) = MONTH(B{1}), DAY('{2} {0}'!A:A) = MINUS(DAY(B{1}), 1))"
+                           ")".format(index, row_to_update, date.year))
         worksheet.update_cell(row_to_update, 5, '=' + value_cell)
         worksheet.update_cell(row_to_update, 6, category)
         return concept, "{} {}".format(value, currency), category, date
