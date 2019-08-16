@@ -3,7 +3,7 @@ Description = An expense bot
 After = mediacenter.service
 
 [Service]
-Type = simple
+Type = forking
 ExecStart = /home/osmc/src/expense-bot/service/start.sh
 
 [Install]
