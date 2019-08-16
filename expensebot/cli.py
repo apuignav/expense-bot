@@ -44,7 +44,6 @@ def setup_logging(level, path, interactive):
         root_logger.addHandler(filelog)
     if interactive:
         console = logging.StreamHandler()
-        console.setLevel(logging.INFO)
         formatter = logging.Formatter(LOGGING_FORMAT)
         console.setFormatter(formatter)
         root_logger.addHandler(console)
