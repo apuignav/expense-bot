@@ -20,10 +20,11 @@ Also see (1) from http://click.pocoo.org/5/setuptools/#setuptools-integration
 """
 
 import argparse
+import os
 
 import logging
 
-from expensebot.config import load_config, CONFIG_FILE
+from expensebot.config import load_config
 from expensebot.bot import ExpenseBot
 
 
@@ -31,7 +32,8 @@ def main(args=None):
     """Run the expense bot."""
     parser = argparse.ArgumentParser(description='DB Consistency checker')
     parser.add_argument('-v', '--verbose', action='store_true', help='Activate debug prints')
-    parser.add_argument('-c', '--config', action='store', type=str, default=CONFIG_FILE,
+    parser.add_argument('-c', '--config', action='store', type=str,
+                        default=os.path.expanduser('~/.expensebotrc'),
                         help='Configuration file to use')
     args = parser.parse_args(args=args)
     if args.verbose:
