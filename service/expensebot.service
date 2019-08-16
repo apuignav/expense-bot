@@ -1,0 +1,10 @@
+[Unit]
+Description = An expense bot
+After = mediacenter.service
+
+[Service]
+Type = forking
+ExecStart = expensebot
+
+[Install]
+WantedBy = multi-user.target
