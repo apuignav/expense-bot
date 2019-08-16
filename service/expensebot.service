@@ -4,7 +4,7 @@ After = mediacenter.service
 
 [Service]
 Type = forking
-ExecStart = expensebot
+ExecStart = /home/osmc/src/expense-bot/service/start.sh
 
 [Install]
 WantedBy = multi-user.target
