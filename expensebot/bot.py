@@ -23,6 +23,7 @@ import expensebot.gsheet as gsheet
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.getLogger('oauth2client.client').setLevel(logging.WARN)
 
 
 CURRENCY_COLS = {'CHF': 3,
