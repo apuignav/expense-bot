@@ -21,11 +21,6 @@ from expensebot.messages import ExpenseParser, ParseError
 import expensebot.gsheet as gsheet
 
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logging.getLogger('oauth2client.client').setLevel(logging.WARN)
-
-
 CURRENCY_COLS = {'CHF': 3,
                  'EUR': 4}
 
@@ -60,6 +55,7 @@ class ExpenseBot:
         @restricted
         def cb_ping(update, context):
             """Get started."""
+            logging.debug("Got ping command")
             context.bot.send_message(chat_id=update.message.chat_id,
                                      text="Pong!")
 
@@ -67,6 +63,7 @@ class ExpenseBot:
         def cb_set_currency(update, context):
             """Set default currency."""
             currency = context.args[0]
+            logging.debug("Setting default currency to %s", currency)
             if currency in CURRENCY_COLS:
                 self._default_currency = currency
                 context.bot.send_message(chat_id=update.message.chat_id,
@@ -78,12 +75,14 @@ class ExpenseBot:
         @restricted
         def cb_get_currency(update, context):
             """Get default currency."""
+            logging.debug("Getting default currency")
             context.bot.send_message(chat_id=update.message.chat_id,
                                      text="Default input currency is {}".format(self._default_currency))
 
         @restricted
         def cb_categories(update, context):
             """Get expense categories."""
+            logging.debug("Getting categories")
             categories = self.get_expense_categories()
             self._parser.set_categories(categories)
             context.bot.send_message(chat_id=update.message.chat_id,
@@ -93,6 +92,7 @@ class ExpenseBot:
         def cb_test(update, context):
             """Test expense parsing."""
             expense_text = ' '.join(context.args)
+            logging.debug("Testing message '%s'", expense_text)
             try:
                 concept, value, currency, category, date = self.parse_expense(expense_text)
                 value = "{} {}".format(value, currency)
@@ -110,8 +110,10 @@ class ExpenseBot:
         @restricted
         def cb_messages(update, context):
             """Answer text messages."""
+            logging.debug("Got message")
             out = ''
             for expense_text in update.message.text.split('\n'):
+                logging.info("Got expense -> %s", expense_text)
                 try:
                     concept, value, category, date = self.add_expense(expense_text)
                     if out:

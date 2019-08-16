@@ -28,6 +28,28 @@ from expensebot.config import load_config
 from expensebot.bot import ExpenseBot
 
 
+LOGGING_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+
+def setup_logging(level, path, interactive):
+    """Configure logging."""
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    logging.getLogger('oauth2client.client').setLevel(logging.WARN)
+    if path:
+        filelog = logging.handlers.TimedRotatingFileHandler('/var/log/expensebot.log',
+                                                            when='midnight', interval=1, backupCount=7)
+        fileformatter = logging.Formatter(LOGGING_FORMAT)
+        filelog.setFormatter(fileformatter)
+        root_logger.addHandler(filelog)
+    if interactive:
+        console = logging.StreamHandler()
+        console.setLevel(logging.INFO)
+        formatter = logging.Formatter(LOGGING_FORMAT)
+        console.setFormatter(formatter)
+        root_logger.addHandler(console)
+
+
 def main(args=None):
     """Run the expense bot."""
     parser = argparse.ArgumentParser(description='DB Consistency checker')
@@ -35,9 +57,12 @@ def main(args=None):
     parser.add_argument('-c', '--config', action='store', type=str,
                         default=os.path.expanduser('~/.expensebotrc'),
                         help='Configuration file to use')
+    parser.add_argument('--interactive', '-i', action='store_true', default=False, help='Log in interactive mode')
+    parser.add_argument('--log-path', action='store', type=str, default='/var/log/expensebot.log')
     args = parser.parse_args(args=args)
-    if args.verbose:
-        logging.getLogger().setLevel('DEBUG')
+    setup_logging('DEBUG' if args.verbose else 'INFO',
+                  args.path,
+                  args.interactive)
     config = load_config(args.config)
     bot = ExpenseBot(config)
     bot.start()
