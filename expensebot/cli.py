@@ -52,7 +52,7 @@ def setup_logging(level, path, interactive):
 
 def main(args=None):
     """Run the expense bot."""
-    parser = argparse.ArgumentParser(description='DB Consistency checker')
+    parser = argparse.ArgumentParser(description='Expense bot')
     parser.add_argument('-v', '--verbose', action='store_true', help='Activate debug prints')
     parser.add_argument('-c', '--config', action='store', type=str,
                         default=os.path.expanduser('~/.expensebotrc'),
@@ -61,7 +61,7 @@ def main(args=None):
     parser.add_argument('--log-path', action='store', type=str, default='/var/log/expensebot.log')
     args = parser.parse_args(args=args)
     setup_logging('DEBUG' if args.verbose else 'INFO',
-                  args.path,
+                  args.log_path,
                   args.interactive)
     config = load_config(args.config)
     bot = ExpenseBot(config)
