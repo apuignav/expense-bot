@@ -108,6 +108,23 @@ class ExpenseBot:
                                      parse_mode=telegram.ParseMode.MARKDOWN)
 
         @restricted
+        def cb_invest(update, context):
+            """Add investment."""
+            invest_text = ' '.join(context.args)
+            logging.debug("Got investment message -> %s", invest_text)
+            try:
+                fund_name, cost, total_units, date = self.add_investment(invest_text)
+                out = "Added investment of {} ({} units) to fund {} on {}".format(cost,
+                                                                                  total_units,
+                                                                                  fund_name,
+                                                                                  date.strftime("%d/%m/%Y"))
+            except ValueError as error:
+                out = "Adding investment failed -> {}".format(error)
+            context.bot.send_message(chat_id=update.message.chat_id,
+                                     text=out,
+                                     parse_mode=telegram.ParseMode.MARKDOWN)
+
+        @restricted
         def cb_messages(update, context):
             """Answer text messages."""
             logging.debug("Got message")
@@ -139,6 +156,7 @@ class ExpenseBot:
         updater.dispatcher.add_handler(CommandHandler("setCurrency", cb_set_currency, pass_args=True))
         updater.dispatcher.add_handler(CommandHandler("getCurrency", cb_get_currency))
         updater.dispatcher.add_handler(CommandHandler("test", cb_test, pass_args=True))
+        updater.dispatcher.add_handler(CommandHandler("invest", cb_invest, pass_args=True))
         # Add message handler
         updater.dispatcher.add_handler(MessageHandler(Filters.text, cb_messages))
         return updater
@@ -211,6 +229,50 @@ class ExpenseBot:
         worksheet.update_cell(row_to_update, 5, '=' + value_cell)
         worksheet.update_cell(row_to_update, 6, category)
         return concept, "{} {}".format(value, currency), category, date
+
+    def add_investment(self, investment_text, spreadsheet_id=None):
+        """Add investment in the corresponding sheet."""
+        def init_invest_worksheet(sheet):
+            sheet.update_acell('A1', 'Concepto')
+            sheet.update_acell('B1', 'Fecha')
+            sheet.update_acell('C1', 'Cost')
+            sheet.update_acell('D1', 'Number of units')
+            sheet.update_acell('E1', '=COUNT(A2:A)')
+
+        import datefinder
+
+        found_dates = datefinder.find_dates(investment_text, source=True)
+        if len(found_dates) > 1:
+            logging.error("Found too many dates in text, ignoring -> %s", found_dates)
+            date = None
+        elif len(found_dates) == 1:
+            date, source_date = found_dates[0]
+            investment_text = investment_text.replace(source_date, '').strip()
+            logging.debug("Found date -> %s", date)
+        else:
+            date = None
+        if not date:
+            date = datetime.datetime.today()
+        # Name, cost, total units (, date)
+        *fund_name, cost, total_units = investment_text.split()
+        fund_name = ' '.join(fund_name)
+        if not spreadsheet_id:
+            spreadsheet_id = self._config['investment-sheet']
+        spreadsheet = gsheet.authorize(self._config).open_by_key(spreadsheet_id)
+        worksheet_name = "{} Trades".format(date.year)
+        worksheet = gsheet.get_worksheet(spreadsheet,
+                                         worksheet_name,
+                                         True,
+                                         init_invest_worksheet)
+        if not worksheet:
+            logging.error("Error getting worksheet %s", worksheet_name)
+            raise ValueError("Error getting worksheet -> {}".format(worksheet_name))
+        row_to_update = int(worksheet.acell('E1').value) + 2
+        worksheet.update_cell(row_to_update, 1, date.strftime('%d/%m/%Y %H:%M:%S'))
+        worksheet.update_cell(row_to_update, 2, fund_name)
+        worksheet.update_cell(3, cost)
+        worksheet.update_cell(3, total_units)
+        return fund_name, cost, total_units, date
 
     def start(self):
         """Start running."""
