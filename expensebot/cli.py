@@ -24,6 +24,8 @@ import os
 
 import logging
 
+import telegram
+
 from expensebot.config import load_config
 from expensebot.bot import ExpenseBot
 
@@ -64,7 +66,16 @@ def main(args=None):
                   args.interactive)
     config = load_config(args.config)
     bot = ExpenseBot(config)
-    bot.start()
+    while True:
+        try:
+            bot.start()
+        except telegram.error.NetworkError:
+            import time
+            logging.error("Network error, retrying in 60 seconds")
+            time.sleep(60)
+        else:
+            logging.error("Uncaught error")
+            break
 
 
 if __name__ == "__main__":
