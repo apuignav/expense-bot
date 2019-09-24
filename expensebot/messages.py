@@ -30,10 +30,10 @@ class MessageParser:
         """Set internal category list."""
         self.categories = {cat.lower(): cat for cat in categories}
 
-    def get_category(self, category):
+    def get_category(self, concept, category):
         matched_cat = None
         for matcher in self._category_matchers:
-            matched_cat = matcher.match(category)
+            matched_cat = matcher.match(concept, category)
             if matched_cat:
                 logging.debug("Matched category by %s -> %s", matcher, matched_cat)
                 break
