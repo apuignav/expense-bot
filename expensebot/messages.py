@@ -21,9 +21,10 @@ class ParseError(Exception):
 class MessageParser:
     """Message parser."""
 
-    def __init__(self, categories):
+    def __init__(self, categories, matcher_classes):
         self.set_categories(categories)
-        self._category_matchers = []
+        self._category_matchers = [matcher_class(categories)
+                                   for matcher_class in matcher_classes]
 
     def set_categories(self, categories):
         """Set internal category list."""
@@ -81,8 +82,7 @@ class FuzzyMatcherMixin:
     """Add fuzzy category matching."""
 
     def __init__(self, categories):
-        super().__init__(categories)
-        self._category_matchers.append(self._fuzzy_match)
+        self.categories = categories
 
     def _fuzzy_match(self, category):
         matched_cat, score = process.extractOne(category.lower(), list(self.categories.keys()), scorer=fuzz.partial_ratio)
@@ -103,8 +103,22 @@ class RepetitionMatcherMixin:
         pass
 
 
+class FixedMatcherMixin:
+    """Add fixed category mixin."""
 
-class ExpenseParser(FuzzyMatcherMixin, RegexParser):
+    CATEGORIES = {'migros': 'Compra', 'coop': 'Compra', 'limpieza': 'Hogar'}
+
+    def __init__(self, categories):
+        self.categories = categories
+
+    def _fuzzy_match(self, category):
+        return self.CATEGORIES.get(category.lower(), None)
+
+
+class ExpenseParser(RegexParser):
     """Full expense parser."""
+
+    def __init__(self, categories):
+        super().__init__(self, categories, [FuzzyMatcherMixin, FixedMatcherMixin])
 
 # EOF
