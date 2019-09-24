@@ -23,7 +23,7 @@ class MessageParser:
 
     def __init__(self, categories, matcher_classes):
         self.set_categories(categories)
-        self._category_matchers = [matcher_class(categories)
+        self._category_matchers = [matcher_class(self.categories)
                                    for matcher_class in matcher_classes]
 
     def set_categories(self, categories):
