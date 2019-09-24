@@ -75,7 +75,7 @@ class RegexParser(MessageParser):
             date = None
         # Now match categories
         logging.debug("Found category -> %s", cat)
-        category = self.get_category(cat)
+        category = self.get_category(concept, cat)
         return concept, value, currency, category, date
 
 
@@ -85,7 +85,7 @@ class FuzzyMatcherMixin:
     def __init__(self, categories):
         self.categories = categories
 
-    def match(self, category):
+    def match(self, _, category):
         if not category:
             return None
         matched_cat, score = process.extractOne(category.lower(), list(self.categories.keys()), scorer=fuzz.partial_ratio)
@@ -114,8 +114,8 @@ class FixedMatcherMixin:
     def __init__(self, categories):
         self.categories = categories
 
-    def match(self, category):
-        return self.CATEGORIES.get(category.lower(), None)
+    def match(self, concept, _):
+        return self.CATEGORIES.get(concept.lower(), None)
 
 
 class ExpenseParser(RegexParser):
