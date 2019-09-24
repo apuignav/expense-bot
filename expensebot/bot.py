@@ -241,7 +241,7 @@ class ExpenseBot:
 
         import datefinder
 
-        found_dates = datefinder.find_dates(investment_text, source=True)
+        found_dates = list(datefinder.find_dates(investment_text, source=True))
         if len(found_dates) > 1:
             logging.error("Found too many dates in text, ignoring -> %s", found_dates)
             date = None
