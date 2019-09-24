@@ -119,6 +119,6 @@ class ExpenseParser(RegexParser):
     """Full expense parser."""
 
     def __init__(self, categories):
-        super().__init__(self, categories, [FuzzyMatcherMixin, FixedMatcherMixin])
+        super().__init__(categories, [FuzzyMatcherMixin, FixedMatcherMixin])
 
 # EOF
