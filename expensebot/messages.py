@@ -35,6 +35,7 @@ class MessageParser:
         for matcher in self._category_matchers:
             matched_cat = matcher.match(category)
             if matched_cat:
+                logging.debug("Matched category by %s -> %s", matcher, matched_cat)
                 break
         return self.categories.get(matched_cat, None)
 
@@ -85,6 +86,8 @@ class FuzzyMatcherMixin:
         self.categories = categories
 
     def match(self, category):
+        if not category:
+            return None
         matched_cat, score = process.extractOne(category.lower(), list(self.categories.keys()), scorer=fuzz.partial_ratio)
         logging.debug("Fuzzywuzzy match -> %s with score %s", matched_cat, score)
         if score < 75:
