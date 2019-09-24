@@ -109,7 +109,7 @@ class RepetitionMatcherMixin:
 class FixedMatcherMixin:
     """Add fixed category mixin."""
 
-    CATEGORIES = {'migros': 'Compra', 'coop': 'Compra', 'limpieza': 'Hogar'}
+    CATEGORIES = {'migros': 'compra', 'coop': 'compra', 'limpieza': 'hogar'}
 
     def __init__(self, categories):
         self.categories = categories
