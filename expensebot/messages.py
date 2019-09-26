@@ -114,7 +114,9 @@ class FixedMatcherMixin:
                   'limpieza': 'hogar',
                   'electricidad e internet': 'vivienda',
                   'guarderia': 'guardería',
-                  'guardería': 'guardería'}
+                  'guardería': 'guardería',
+                  'impuestos': 'impuestos',
+                  'lavadora': 'vivienda'}
 
     def __init__(self, categories):
         self.categories = categories
