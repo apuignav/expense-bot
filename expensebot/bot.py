@@ -96,7 +96,6 @@ class ExpenseBot:
             try:
                 concept, value, currency, category, date = self.parse_expense(expense_text)
                 value = "{} {}".format(value, currency)
-                concept, value, category, date = self.add_expense(expense_text)
                 out = "_Test_ Added expense of {} in '{}' in category '{}' on {}".format(value,
                                                                                          concept,
                                                                                          category,
