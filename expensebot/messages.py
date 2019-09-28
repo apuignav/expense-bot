@@ -111,6 +111,7 @@ class FixedMatcherMixin:
 
     CATEGORIES = {'migros': 'compra',
                   'coop': 'compra',
+                  'denner': 'compra',
                   'limpieza': 'hogar',
                   'electricidad e internet': 'vivienda',
                   'guarderia': 'guardería',
