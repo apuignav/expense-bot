@@ -119,7 +119,8 @@ class FixedMatcherMixin:
                   'impuestos': 'impuestos',
                   'gasolina': 'transporte',
                   'lavadora': 'vivienda',
-                  'piso': 'vivienda'}
+                  'piso': 'vivienda',
+                  'helsana': 'salud'}
 
     def __init__(self, categories):
         self.categories = categories
