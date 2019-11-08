@@ -9,6 +9,8 @@
 
 import re
 import logging
+from pathlib import Path
+import yaml
 
 from fuzzywuzzy import fuzz, process
 import datefinder
@@ -109,24 +111,15 @@ class RepetitionMatcherMixin:
 class FixedMatcherMixin:
     """Add fixed category mixin."""
 
-    CATEGORIES = {'migros': 'compra',
-                  'coop': 'compra',
-                  'denner': 'compra',
-                  'limpieza': 'hogar',
-                  'electricidad e internet': 'vivienda',
-                  'guarderia': 'guardería',
-                  'guardería': 'guardería',
-                  'impuestos': 'impuestos',
-                  'gasolina': 'transporte',
-                  'lavadora': 'vivienda',
-                  'piso': 'vivienda',
-                  'helsana': 'salud'}
+    INPUT_CATEGORIES = Path(__file__) / 'fixed_cats.yaml'
 
     def __init__(self, categories):
+        with open(self.INPUT_CATEGORIES) as input_file:
+            self.fixed_categories = yaml.safe_load(input_file)
         self.categories = categories
 
     def match(self, concept, _):
-        return self.CATEGORIES.get(concept.lower(), None)
+        return self.fixed_categories.get(concept.lower(), None)
 
 
 class ExpenseParser(RegexParser):
