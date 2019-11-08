@@ -111,10 +111,10 @@ class RepetitionMatcherMixin:
 class FixedMatcherMixin:
     """Add fixed category mixin."""
 
-    INPUT_CATEGORIES = Path(__file__) / 'fixed_cats.yaml'
+    INPUT_CATEGORIES = str(Path(__file__).parent / 'fixed_cats.yaml')
 
     def __init__(self, categories):
-        with open(self.INPUT_CATEGORIES) as input_file:
+        with open(self.INPUT_CATEGORIES, 'rt', encoding='utf8') as input_file:
             self.fixed_categories = yaml.safe_load(input_file)
         self.categories = categories
 
