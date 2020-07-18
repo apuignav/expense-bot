@@ -3,6 +3,7 @@ coop: compra
 denner: compra
 limpieza: hogar
 "electricidad e internet": vivienda
+electricidad: vivienda
 guarderia: guardería
 guardería: guardería
 guarde: guardería
@@ -14,3 +15,6 @@ helsana: salud
 zara: ropa
 "h&m": ropa
 tren: transporte
+"massimo dutti": ropa
+helados: ocio
+helado: ocio
