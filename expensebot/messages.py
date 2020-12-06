@@ -78,7 +78,7 @@ class RegexParser(MessageParser):
         # Now match categories
         logging.debug("Found category -> %s", cat)
         category = self.get_category(concept, cat)
-        return concept, value, currency, category, date
+        return concept, value, currency.upper(), category, date
 
 
 class FuzzyMatcherMixin:

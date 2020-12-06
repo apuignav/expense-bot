@@ -216,7 +216,7 @@ class ExpenseBot:
         row_to_update = int(worksheet.acell('G1').value) + 2
         worksheet.update_cell(row_to_update, 1, concept)
         worksheet.update_cell(row_to_update, 2, date.strftime('%d/%m/%Y %H:%M:%S'))
-        col_to_update = CURRENCY_COLS[currency]
+        col_to_update = CURRENCY_COLS[currency.upper()]
         worksheet.update_cell(row_to_update, col_to_update, value)
         value_cell = gsheet.gspread.utils.rowcol_to_a1(row_to_update, col_to_update)
         if currency != self._ref_currency:
