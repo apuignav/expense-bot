@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 import yaml
 
+import importlib_resources as resources
 from fuzzywuzzy import fuzz, process
 import datefinder
 
@@ -78,7 +79,7 @@ class RegexParser(MessageParser):
         # Now match categories
         logging.debug("Found category -> %s", cat)
         category = self.get_category(concept, cat)
-        return concept, value, currency.upper(), category, date
+        return concept, value, currency, category, date
 
 
 class FuzzyMatcherMixin:
@@ -111,7 +112,7 @@ class RepetitionMatcherMixin:
 class FixedMatcherMixin:
     """Add fixed category mixin."""
 
-    INPUT_CATEGORIES = str(Path(__file__).parent / 'fixed_cats.yaml')
+    INPUT_CATEGORIES = resources.files("expensebot") / "data" / "fixed_cats.yaml"
 
     def __init__(self, categories):
         with open(self.INPUT_CATEGORIES, 'rt', encoding='utf8') as input_file:

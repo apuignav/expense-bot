@@ -24,6 +24,7 @@ setup(name='expensebot',
       author_email='albert.puig.navarro@gmail.com',
       url='https://github.com/apuignav/expense-bot',
       packages=find_packages('.'),
+      package_data={'expensebot': ['data/*.yaml']},
       include_package_data=True,
       zip_safe=False,
       classifiers=['Programming Language :: Python :: 3.6',
@@ -38,7 +39,8 @@ setup(name='expensebot',
                         'python-Levenshtein==0.12.0',
                         'python-telegram-bot==12.0.0b1',
                         'fuzzywuzzy==0.17.0',
-                        'datefinder==0.7.0'
+                        'datefinder==0.7.0',
+                        'importlib-resources>3.0.0'
                         ],
       entry_points={'console_scripts': ['expensebot = expensebot.cli:main']})
 
