@@ -10,15 +10,14 @@
 import yaml
 
 
-CONFIG_FILE = 'config.yaml'
+CONFIG_FILE = "config.yaml"
 
 
 def load_config(config_file=CONFIG_FILE):
     """Load configuration."""
-    with open(config_file, 'r') as config_stream:
+    with open(config_file, "r") as config_stream:
         config = yaml.safe_load(config_stream)
     return config
-
 
 
 # EOF
