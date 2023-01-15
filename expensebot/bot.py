@@ -220,6 +220,7 @@ class ExpenseBot:
             sheet.update_acell("E1", "Valor")
             sheet.update_acell("F1", "Categoria")
             sheet.update_acell("G1", "=COUNT(C2:D)")
+            sheet.freeze(rows=1)
 
         concept, value, currency, category, date = self.parse_expense(expense_text)
         if not spreadsheet_id:
@@ -238,8 +239,8 @@ class ExpenseBot:
         col_to_update = CURRENCY_COLS[currency.upper()]
         worksheet.update_cell(row_to_update, col_to_update, value)
         value_cell = gsheet.gspread.utils.rowcol_to_a1(row_to_update, col_to_update)
-        if currency != self._ref_currency:
-            index = "{}{}".format(currency, self._ref_currency)
+        if currency.upper() != self._ref_currency.upper():
+            index = ("{}{}".format(currency, self._ref_currency)).upper()
             value_cell += (
                 "*IFNA("
                 "FILTER('{2} {0}'!B:B, MONTH('{2} {0}'!A:A) = MONTH(B{1}), DAY('{2} {0}'!A:A) = DAY(B{1})), "
