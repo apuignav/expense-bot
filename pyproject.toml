@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+authors = [
+    { name = "Albert Puig Navarro", email = 'albert.puig.navarro@gmail.com' },
+]
+requires-python = ">=3.7"
+version = "0.0.0"
+name = "expensebot"
+description = 'Expense tracker Telegram Bot'
+readme = "README.md"
+dependencies = [
+    'gspread==5.1.1',
+    'oauth2client==4.1.3',
+    'pyOpenSSL==19.0.0',
+    'PyYAML==5.1.2',
+    'python-Levenshtein==0.12.0',
+    'python-telegram-bot==12.0.0b1',
+    'fuzzywuzzy==0.17.0',
+    'datefinder==0.7.0',
+    'importlib-resources>3.0.0',
+]
+
+[project.scripts]
+expensebot = "expensebot.cli:main"
+
+[project.urls]
+Homepage = 'https://github.com/apuignav/expense-bot'
+
+[tool.setuptools]
+# ...
+# By default, include-package-data is true in pyproject.toml, so you do
+# NOT have to specify this line.
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+expensebot = ['data/*.yaml']
