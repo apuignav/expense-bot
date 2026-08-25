@@ -74,12 +74,15 @@ def main(args=None):
                         help='Configuration file to use')
     parser.add_argument('--interactive', '-i', action='store_true', default=False, help='Log in interactive mode')
     parser.add_argument('--log-path', action='store', type=str, default='/var/log/expensebot.log')
+    parser.add_argument('--state-path', action='store', type=str,
+                        default=os.path.expanduser('~/.expensebot-state.yaml'),
+                        help='File used to persist mutable bot settings')
     args = parser.parse_args(args=args)
     setup_logging('DEBUG' if args.verbose else 'INFO',
                   args.log_path,
                   args.interactive)
     config = load_config(args.config)
-    bot = ExpenseBot(config)
+    bot = ExpenseBot(config, state_path=args.state_path)
     bot.start()
 
 

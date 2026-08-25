@@ -5,8 +5,9 @@ import os
 import tempfile
 import unittest
 from logging.handlers import TimedRotatingFileHandler
+from unittest.mock import patch
 
-from expensebot.cli import LOG_BACKUP_COUNT, delete_expired_log_files
+from expensebot.cli import LOG_BACKUP_COUNT, delete_expired_log_files, main
 
 
 class LogRetentionTest(unittest.TestCase):
@@ -34,6 +35,25 @@ class LogRetentionTest(unittest.TestCase):
                 self.assertIn("expensebot.log.2026-08-10", rotated_logs)
             finally:
                 handler.close()
+
+
+class MainTest(unittest.TestCase):
+
+    @patch("expensebot.cli.ExpenseBot")
+    @patch("expensebot.cli.load_config", return_value={"config": True})
+    @patch("expensebot.cli.setup_logging")
+    def test_passes_state_path_to_bot(self, setup_logging, load_config, bot_class):
+        main([
+            "--config", "/tmp/config.yaml",
+            "--log-path", "",
+            "--state-path", "/tmp/state.yaml",
+        ])
+
+        load_config.assert_called_once_with("/tmp/config.yaml")
+        bot_class.assert_called_once_with(
+            {"config": True}, state_path="/tmp/state.yaml"
+        )
+        bot_class.return_value.start.assert_called_once_with()
 
 
 if __name__ == "__main__":

@@ -6,8 +6,8 @@ After = network-online.target mediacenter.service
 [Service]
 Type = simple
 WorkingDirectory = /home/osmc/src/expense-bot
-ExecStart = /usr/bin/python3 -m expensebot.cli -c /home/osmc/.expensebotrc
-Restart = on-failure
+ExecStart = /usr/bin/python3 -m expensebot.cli -c /home/osmc/.expensebotrc --state-path /home/osmc/.expensebot-state.yaml
+Restart = always
 RestartSec = 10
 TimeoutStopSec = 30
 

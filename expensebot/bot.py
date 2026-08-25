@@ -12,6 +12,10 @@ from functools import wraps
 import logging
 
 import datetime
+import os
+import tempfile
+
+import yaml
 
 import telegram
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
@@ -28,15 +32,17 @@ CURRENCY_COLS = {"CHF": 3, "EUR": 4}
 class ExpenseBot:
     """Telegram bot for expense tracking."""
 
-    def __init__(self, bot_config):
+    def __init__(self, bot_config, state_path=None):
         """Initialize the updater."""
         self._config = bot_config
+        self._state_path = state_path
         self._authorized_ids = bot_config["credentials"]["telegram"]["authorized-ids"]
+        self._ref_currency = bot_config.get("currency", {}).get("reference", "CHF")
+        configured_currency = bot_config.get("currency", {}).get("default", "CHF")
+        self._default_currency = self.load_default_currency(configured_currency)
         self._updater = self.create_bot()
         categories = self.get_expense_categories()
         self._parser = ExpenseParser(categories)
-        self._ref_currency = bot_config.get("currency", {}).get("reference", "CHF")
-        self._default_currency = bot_config.get("currency", {}).get("default", "CHF")
 
     def create_bot(self, bot_config=None):
         """Create and configure the bot."""
@@ -64,19 +70,24 @@ class ExpenseBot:
         @restricted
         def cb_set_currency(update, context):
             """Set default currency."""
-            currency = context.args[0]
+            if not context.args:
+                context.bot.send_message(
+                    chat_id=update.message.chat_id,
+                    text="Usage: /setCurrency CHF|EUR",
+                )
+                return
+            currency = context.args[0].upper()
             logging.debug("Setting default currency to %s", currency)
             if currency in CURRENCY_COLS:
-                self._default_currency = currency
-                context.bot.send_message(
-                    chat_id=update.message.chat_id,
-                    text="Set default input currency to {}".format(currency),
-                )
+                try:
+                    self.set_default_currency(currency)
+                    out = "Set default input currency to {}".format(currency)
+                except OSError:
+                    logging.exception("Could not persist default currency")
+                    out = "Could not save the currency setting; it was not changed."
             else:
-                context.bot.send_message(
-                    chat_id=update.message.chat_id,
-                    text="Unknown currency {}".format(currency),
-                )
+                out = "Unknown currency {}".format(currency)
+            context.bot.send_message(chat_id=update.message.chat_id, text=out)
 
         @restricted
         def cb_get_currency(update, context):
@@ -206,6 +217,61 @@ class ExpenseBot:
             update,
             exc_info=(type(context.error), context.error, context.error.__traceback__)
         )
+
+    def load_default_currency(self, fallback):
+        """Load the persisted default currency, falling back to configuration."""
+        fallback = fallback.upper()
+        if not self._state_path or not os.path.exists(self._state_path):
+            return fallback
+        try:
+            with open(self._state_path, "r") as state_stream:
+                state = yaml.safe_load(state_stream) or {}
+            currency = state.get("default_currency", fallback).upper()
+            if currency not in CURRENCY_COLS:
+                logging.warning(
+                    "Ignoring invalid persisted default currency %r", currency
+                )
+                return fallback
+            return currency
+        except (OSError, AttributeError, yaml.YAMLError):
+            logging.exception(
+                "Could not load state from %s; using configured currency",
+                self._state_path,
+            )
+            return fallback
+
+    def set_default_currency(self, currency):
+        """Persist and activate a new default currency."""
+        currency = currency.upper()
+        if currency not in CURRENCY_COLS:
+            raise ValueError("Unknown currency {}".format(currency))
+        if self._state_path:
+            self._save_default_currency(currency)
+        self._default_currency = currency
+
+    def _save_default_currency(self, currency):
+        """Atomically write the mutable bot state."""
+        state_path = os.path.abspath(self._state_path)
+        state_directory = os.path.dirname(state_path)
+        descriptor, temporary_path = tempfile.mkstemp(
+            prefix=".expensebot-state-", dir=state_directory
+        )
+        try:
+            with os.fdopen(descriptor, "w") as state_stream:
+                yaml.safe_dump(
+                    {"default_currency": currency},
+                    state_stream,
+                    default_flow_style=False,
+                )
+                state_stream.flush()
+                os.fsync(state_stream.fileno())
+            os.replace(temporary_path, state_path)
+        except Exception:
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
+            raise
 
     def get_expense_categories(self, spreadsheet_id=None):
         """Load expense categories from GSheets."""
