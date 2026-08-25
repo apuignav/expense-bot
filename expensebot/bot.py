@@ -15,6 +15,7 @@ import datetime
 
 import telegram
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from gspread.exceptions import APIError
 
 from expensebot.messages import ExpenseParser, ParseError
 
@@ -30,8 +31,8 @@ class ExpenseBot:
     def __init__(self, bot_config):
         """Initialize the updater."""
         self._config = bot_config
-        self._updater = self.create_bot()
         self._authorized_ids = bot_config["credentials"]["telegram"]["authorized-ids"]
+        self._updater = self.create_bot()
         categories = self.get_expense_categories()
         self._parser = ExpenseParser(categories)
         self._ref_currency = bot_config.get("currency", {}).get("reference", "CHF")
@@ -90,11 +91,14 @@ class ExpenseBot:
         def cb_categories(update, context):
             """Get expense categories."""
             logging.debug("Getting categories")
-            categories = self.get_expense_categories()
-            self._parser.set_categories(categories)
-            context.bot.send_message(
-                chat_id=update.message.chat_id, text="\n".join(categories)
-            )
+            try:
+                categories = self.get_expense_categories()
+                self._parser.set_categories(categories)
+                out = "\n".join(categories)
+            except APIError:
+                logging.exception("Google Sheets unavailable while loading categories")
+                out = "Google Sheets is temporarily unavailable. Please try again later."
+            context.bot.send_message(chat_id=update.message.chat_id, text=out)
 
         @restricted
         def cb_test(update, context):
@@ -131,6 +135,12 @@ class ExpenseBot:
                 )
             except ValueError as error:
                 out = "Adding investment failed -> {}".format(error)
+            except APIError:
+                logging.exception("Google Sheets unavailable while adding investment")
+                out = (
+                    "Google Sheets is temporarily unavailable; saving the investment "
+                    "could not be confirmed. Please check the sheet before retrying."
+                )
             context.bot.send_message(
                 chat_id=update.message.chat_id,
                 text=out,
@@ -155,6 +165,14 @@ class ExpenseBot:
                         out += "\n*Category is undefined, you will need to correct this manually*"
                 except ValueError as error:
                     out += "Adding expense failed -> {}".format(error)
+                except APIError:
+                    logging.exception("Google Sheets unavailable while adding expense")
+                    if out:
+                        out += "\n"
+                    out += (
+                        "Google Sheets is temporarily unavailable; saving this expense "
+                        "could not be confirmed. Please check the sheet before retrying."
+                    )
             context.bot.send_message(
                 chat_id=update.message.chat_id,
                 text=out,
@@ -177,16 +195,34 @@ class ExpenseBot:
         )
         # Add message handler
         updater.dispatcher.add_handler(MessageHandler(Filters.text, cb_messages))
+        updater.dispatcher.add_error_handler(self.on_error)
         return updater
+
+    @staticmethod
+    def on_error(update, context):
+        """Log errors delivered by the Telegram dispatcher."""
+        logging.error(
+            "Unhandled Telegram error while processing update %r",
+            update,
+            exc_info=(type(context.error), context.error, context.error.__traceback__)
+        )
 
     def get_expense_categories(self, spreadsheet_id=None):
         """Load expense categories from GSheets."""
         if not spreadsheet_id:
             spreadsheet_id = self._config["nw-sheet"]
-        spreadsheet = gsheet.authorize(self._config).open_by_key(spreadsheet_id)
-        sheet = spreadsheet.worksheet(f"{datetime.datetime.today().year} Gastos")
+        spreadsheet = gsheet.open_by_key(self._config, spreadsheet_id)
+        sheet_name = "{} Gastos".format(datetime.datetime.today().year)
+        sheet = gsheet.call_with_retry(
+            lambda: spreadsheet.worksheet(sheet_name),
+            description="Opening category worksheet"
+        )
         cats = []
-        for row_num, val in enumerate(sheet.col_values(1)):
+        values = gsheet.call_with_retry(
+            lambda: sheet.col_values(1),
+            description="Loading expense categories"
+        )
+        for row_num, val in enumerate(values):
             if val == "Total gastos":
                 break
             if not val or row_num == 0:
@@ -213,19 +249,24 @@ class ExpenseBot:
         """Add expense to corresponding sheet."""
 
         def init_expense_worksheet(sheet):
-            sheet.update_acell("A1", "Concepto")
-            sheet.update_acell("B1", "Fecha")
-            sheet.update_acell("C1", "CHF")
-            sheet.update_acell("D1", "EUR")
-            sheet.update_acell("E1", "Valor")
-            sheet.update_acell("F1", "Categoria")
-            sheet.update_acell("G1", "=COUNT(C2:D)")
-            sheet.freeze(rows=1)
+            gsheet.call_with_retry(
+                lambda: sheet.update(
+                    "A1:G1",
+                    [["Concepto", "Fecha", "CHF", "EUR", "Valor", "Categoria",
+                      "=COUNT(C2:D)"]],
+                    raw=False
+                ),
+                description="Initializing expense worksheet"
+            )
+            gsheet.call_with_retry(
+                lambda: sheet.freeze(rows=1),
+                description="Freezing expense worksheet header"
+            )
 
         concept, value, currency, category, date = self.parse_expense(expense_text)
         if not spreadsheet_id:
             spreadsheet_id = self._config["expenses-sheet"]
-        spreadsheet = gsheet.authorize(self._config).open_by_key(spreadsheet_id)
+        spreadsheet = gsheet.open_by_key(self._config, spreadsheet_id)
         worksheet_name = date.strftime("%m/%Y")
         worksheet = gsheet.get_worksheet(
             spreadsheet, worksheet_name, True, init_expense_worksheet
@@ -233,11 +274,12 @@ class ExpenseBot:
         if not worksheet:
             logging.error("Error getting worksheet %s", worksheet_name)
             raise ValueError("Error getting worksheet -> {}".format(worksheet_name))
-        row_to_update = int(worksheet.acell("G1").value) + 2
-        worksheet.update_cell(row_to_update, 1, concept)
-        worksheet.update_cell(row_to_update, 2, date.strftime("%d/%m/%Y %H:%M:%S"))
+        count_cell = gsheet.call_with_retry(
+            lambda: worksheet.acell("G1"),
+            description="Finding the next expense row"
+        )
+        row_to_update = int(count_cell.value) + 2
         col_to_update = CURRENCY_COLS[currency.upper()]
-        worksheet.update_cell(row_to_update, col_to_update, value)
         value_cell = gsheet.gspread.utils.rowcol_to_a1(row_to_update, col_to_update)
         if currency.upper() != self._ref_currency.upper():
             index = ("{}{}".format(currency, self._ref_currency)).upper()
@@ -247,8 +289,14 @@ class ExpenseBot:
                 "FILTER('{2} {0}'!B:B, MONTH('{2} {0}'!A:A) = MONTH(B{1}), DAY('{2} {0}'!A:A) = MINUS(DAY(B{1}), 1))"
                 ")".format(index, row_to_update, date.year)
             )
-        worksheet.update_cell(row_to_update, 5, "=" + value_cell)
-        worksheet.update_cell(row_to_update, 6, category)
+        row = [concept, date.strftime("%d/%m/%Y %H:%M:%S"), "", "",
+               "=" + value_cell, category]
+        row[col_to_update - 1] = value
+        target_range = "A{0}:F{0}".format(row_to_update)
+        gsheet.call_with_retry(
+            lambda: worksheet.update(target_range, [row], raw=False),
+            description="Saving expense"
+        )
         return concept, "{} {}".format(value, currency), category, date
 
     def add_investment(self, investment_text, spreadsheet_id=None):
@@ -298,6 +346,7 @@ class ExpenseBot:
     def start(self):
         """Start running."""
         self._updater.start_polling()
+        self._updater.idle()
 
 
 # EOF

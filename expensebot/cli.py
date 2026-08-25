@@ -37,7 +37,7 @@ def setup_logging(level, path, interactive):
     root_logger.setLevel(level)
     logging.getLogger('oauth2client.client').setLevel(logging.WARN)
     if path:
-        filelog = logging.handlers.TimedRotatingFileHandler('/var/log/expensebot.log',
+        filelog = logging.handlers.TimedRotatingFileHandler(path,
                                                             when='midnight', interval=1, backupCount=7)
         fileformatter = logging.Formatter(LOGGING_FORMAT)
         filelog.setFormatter(fileformatter)
