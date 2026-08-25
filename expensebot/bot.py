@@ -8,12 +8,16 @@
 """First take at bot."""
 
 from functools import wraps
+from collections import Counter, defaultdict
 
 import logging
 
 import datetime
 import os
+import re
 import tempfile
+import time
+import unicodedata
 
 import yaml
 
@@ -27,6 +31,7 @@ import expensebot.gsheet as gsheet
 
 
 CURRENCY_COLS = {"CHF": 3, "EUR": 4}
+UNDEFINED_CATEGORY = "Undefined"
 
 
 class ExpenseBot:
@@ -40,9 +45,26 @@ class ExpenseBot:
         self._ref_currency = bot_config.get("currency", {}).get("reference", "CHF")
         configured_currency = bot_config.get("currency", {}).get("default", "CHF")
         self._default_currency = self.load_default_currency(configured_currency)
+        discovery_config = bot_config.get("category-discovery", {})
+        self._history_enabled = discovery_config.get("enabled", True)
+        self._history_months = int(discovery_config.get("months", 6))
+        self._history_min_occurrences = int(
+            discovery_config.get("minimum-occurrences", 2)
+        )
+        self._history_ttl = float(
+            discovery_config.get("cache-ttl-hours", 6)
+        ) * 60 * 60
+        self._history_retry_delay = float(
+            discovery_config.get("retry-delay-minutes", 15)
+        ) * 60
+        self._category_history = {}
+        self._history_refreshed_at = None
+        self._history_refresh_attempted_at = None
         self._updater = self.create_bot()
         categories = self.get_expense_categories()
         self._parser = ExpenseParser(categories)
+        if self._history_enabled:
+            self.refresh_category_history()
 
     def create_bot(self, bot_config=None):
         """Create and configure the bot."""
@@ -296,6 +318,103 @@ class ExpenseBot:
             cats.append(val)
         return cats
 
+    @staticmethod
+    def normalize_concept(concept):
+        """Normalize a concept for conservative historical matching."""
+        normalized = unicodedata.normalize("NFKC", concept).casefold().strip()
+        return re.sub(r"\s+", " ", normalized)
+
+    def _history_worksheet_names(self, today=None):
+        """Return current and previous monthly worksheet names."""
+        if today is None:
+            today = datetime.datetime.today()
+        current_month = today.year * 12 + today.month - 1
+        names = []
+        for offset in range(self._history_months + 1):
+            month_index = current_month - offset
+            year, zero_based_month = divmod(month_index, 12)
+            names.append("{:02d}/{}".format(zero_based_month + 1, year))
+        return names
+
+    def _load_category_history(self, spreadsheet_id=None):
+        """Build a concept-to-category counter from recent expense sheets."""
+        if not spreadsheet_id:
+            spreadsheet_id = self._config["expenses-sheet"]
+        spreadsheet = gsheet.open_by_key(self._config, spreadsheet_id)
+        worksheets = gsheet.call_with_retry(
+            spreadsheet.worksheets,
+            description="Listing historical expense worksheets",
+        )
+        worksheets_by_name = {worksheet.title: worksheet for worksheet in worksheets}
+        history = defaultdict(Counter)
+        for worksheet_name in self._history_worksheet_names():
+            worksheet = worksheets_by_name.get(worksheet_name)
+            if worksheet is None:
+                continue
+            rows = gsheet.call_with_retry(
+                lambda worksheet=worksheet: worksheet.get("A2:F"),
+                description="Loading category history from {}".format(worksheet_name),
+            )
+            for row in rows:
+                if len(row) < 6 or not row[0] or not row[5]:
+                    continue
+                concept = self.normalize_concept(str(row[0]))
+                category = str(row[5]).strip().lower()
+                if not concept or category == UNDEFINED_CATEGORY.lower():
+                    continue
+                history[concept][category] += 1
+        return dict(history)
+
+    def refresh_category_history(self):
+        """Refresh history atomically, retaining stale data on failure."""
+        attempted_at = time.monotonic()
+        self._history_refresh_attempted_at = attempted_at
+        try:
+            history = self._load_category_history()
+        except APIError:
+            logging.exception("Could not refresh historical category index")
+            return False
+        self._category_history = history
+        self._history_refreshed_at = attempted_at
+        logging.info(
+            "Loaded historical categories for %d concepts", len(self._category_history)
+        )
+        return True
+
+    def ensure_category_history_fresh(self):
+        """Refresh stale history, with a cooldown after failed attempts."""
+        if not self._history_enabled:
+            return
+        now = time.monotonic()
+        if (self._history_refreshed_at is not None and
+                now - self._history_refreshed_at < self._history_ttl):
+            return
+        if (self._history_refresh_attempted_at is not None and
+                now - self._history_refresh_attempted_at < self._history_retry_delay):
+            return
+        self.refresh_category_history()
+
+    def discover_category(self, concept):
+        """Return a unanimous historical category for a concept, if available."""
+        self.ensure_category_history_fresh()
+        counts = self._category_history.get(self.normalize_concept(concept), Counter())
+        if len(counts) != 1:
+            return None
+        normalized_category, occurrences = next(iter(counts.items()))
+        if occurrences < self._history_min_occurrences:
+            return None
+        return self._parser.categories.get(normalized_category)
+
+    def record_category_history(self, concept, category):
+        """Record a successfully saved categorized expense in memory."""
+        if (not self._history_enabled or
+                category.strip().lower() == UNDEFINED_CATEGORY.lower()):
+            return
+        normalized_concept = self.normalize_concept(concept)
+        normalized_category = category.strip().lower()
+        counts = self._category_history.setdefault(normalized_concept, Counter())
+        counts[normalized_category] += 1
+
     def parse_expense(self, expense_text):
         """Parse and interpret expense text."""
         try:
@@ -307,8 +426,10 @@ class ExpenseBot:
         if not date:
             date = datetime.datetime.today()
         if not category:
+            category = self.discover_category(concept)
+        if not category:
             logging.warning("Couldn't determine expense category, setting to Undefined")
-            category = "Undefined"
+            category = UNDEFINED_CATEGORY
         return concept, value, currency, category, date
 
     def add_expense(self, expense_text, spreadsheet_id=None):
@@ -363,6 +484,7 @@ class ExpenseBot:
             lambda: worksheet.update(target_range, [row], raw=False),
             description="Saving expense"
         )
+        self.record_category_history(concept, category)
         return concept, "{} {}".format(value, currency), category, date
 
     def add_investment(self, investment_text, spreadsheet_id=None):
