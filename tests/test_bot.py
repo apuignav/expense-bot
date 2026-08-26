@@ -52,10 +52,14 @@ class LifecycleTest(unittest.TestCase):
         bot = ExpenseBot.__new__(ExpenseBot)
         bot._updater = Mock()
 
-        bot.start()
+        with self.assertLogs(level="INFO") as logs:
+            bot.start()
 
         bot._updater.start_polling.assert_called_once_with()
         bot._updater.idle.assert_called_once_with()
+        self.assertIn("Starting Telegram polling", logs.output[0])
+        self.assertIn("ready and polling", logs.output[1])
+        self.assertIn("Expense bot stopped", logs.output[2])
 
 
 class CurrencyStateTest(unittest.TestCase):

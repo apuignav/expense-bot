@@ -65,6 +65,13 @@ class ExpenseBot:
         self._parser = ExpenseParser(categories)
         if self._history_enabled:
             self.refresh_category_history()
+        logging.info(
+            "Expense bot initialized with %d categories, %d historical concepts, "
+            "and default currency %s",
+            len(categories),
+            len(self._category_history),
+            self._default_currency,
+        )
 
     def create_bot(self, bot_config=None):
         """Create and configure the bot."""
@@ -542,8 +549,13 @@ class ExpenseBot:
 
     def start(self):
         """Start running."""
+        logging.info("Starting Telegram polling")
         self._updater.start_polling()
-        self._updater.idle()
+        logging.info("Expense bot is ready and polling for updates")
+        try:
+            self._updater.idle()
+        finally:
+            logging.info("Expense bot stopped")
 
 
 # EOF

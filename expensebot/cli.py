@@ -81,9 +81,17 @@ def main(args=None):
     setup_logging('DEBUG' if args.verbose else 'INFO',
                   args.log_path,
                   args.interactive)
-    config = load_config(args.config)
-    bot = ExpenseBot(config, state_path=args.state_path)
-    bot.start()
+    logging.info(
+        "Starting expense bot process (pid=%d, config=%s, state=%s)",
+        os.getpid(), args.config, args.state_path
+    )
+    try:
+        config = load_config(args.config)
+        bot = ExpenseBot(config, state_path=args.state_path)
+        bot.start()
+    except Exception:
+        logging.exception("Expense bot terminated with an error")
+        raise
 
 
 if __name__ == "__main__":
