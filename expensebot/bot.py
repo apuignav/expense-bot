@@ -243,7 +243,16 @@ class ExpenseBot:
     def load_default_currency(self, fallback):
         """Load the persisted default currency, falling back to configuration."""
         fallback = fallback.upper()
-        if not self._state_path or not os.path.exists(self._state_path):
+        if not self._state_path:
+            return fallback
+        if not os.path.exists(self._state_path):
+            try:
+                self._save_default_currency(fallback)
+            except OSError:
+                logging.exception(
+                    "Could not initialize state at %s; using configured currency",
+                    self._state_path,
+                )
             return fallback
         try:
             with open(self._state_path, "r") as state_stream:

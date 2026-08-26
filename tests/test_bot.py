@@ -60,6 +60,18 @@ class LifecycleTest(unittest.TestCase):
 
 class CurrencyStateTest(unittest.TestCase):
 
+    def test_missing_state_is_initialized_from_configured_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = os.path.join(directory, "state.yaml")
+            bot = ExpenseBot.__new__(ExpenseBot)
+            bot._state_path = state_path
+
+            self.assertEqual("EUR", bot.load_default_currency("eur"))
+
+            restarted_bot = ExpenseBot.__new__(ExpenseBot)
+            restarted_bot._state_path = state_path
+            self.assertEqual("EUR", restarted_bot.load_default_currency("CHF"))
+
     def test_currency_survives_restart(self):
         with tempfile.TemporaryDirectory() as directory:
             state_path = os.path.join(directory, "state.yaml")
