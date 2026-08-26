@@ -32,6 +32,8 @@ class MessageParser:
     def set_categories(self, categories):
         """Set internal category list."""
         self.categories = {cat.lower(): cat for cat in categories}
+        for matcher in getattr(self, "_category_matchers", []):
+            matcher.categories = self.categories
 
     def get_category(self, concept, category):
         matched_cat = None

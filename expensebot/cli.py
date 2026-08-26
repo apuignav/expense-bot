@@ -23,12 +23,23 @@ import argparse
 import os
 
 import logging
+from logging.handlers import TimedRotatingFileHandler
 
 from expensebot.config import load_config
 from expensebot.bot import ExpenseBot
 
 
 LOGGING_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+LOG_BACKUP_COUNT = 7
+
+
+def delete_expired_log_files(handler):
+    """Delete rotated logs beyond the handler's configured retention."""
+    for expired_path in handler.getFilesToDelete():
+        try:
+            os.remove(expired_path)
+        except OSError as error:
+            logging.warning("Could not remove expired log %s: %s", expired_path, error)
 
 
 def setup_logging(level, path, interactive):
@@ -37,8 +48,13 @@ def setup_logging(level, path, interactive):
     root_logger.setLevel(level)
     logging.getLogger('oauth2client.client').setLevel(logging.WARN)
     if path:
-        filelog = logging.handlers.TimedRotatingFileHandler('/var/log/expensebot.log',
-                                                            when='midnight', interval=1, backupCount=7)
+        filelog = TimedRotatingFileHandler(
+            path, when='midnight', interval=1, backupCount=LOG_BACKUP_COUNT
+        )
+        # TimedRotatingFileHandler normally prunes backups only during a
+        # rollover. Also prune at startup so stale files are cleaned after
+        # downtime, upgrades, or an interrupted rollover.
+        delete_expired_log_files(filelog)
         fileformatter = logging.Formatter(LOGGING_FORMAT)
         filelog.setFormatter(fileformatter)
         root_logger.addHandler(filelog)
@@ -58,12 +74,15 @@ def main(args=None):
                         help='Configuration file to use')
     parser.add_argument('--interactive', '-i', action='store_true', default=False, help='Log in interactive mode')
     parser.add_argument('--log-path', action='store', type=str, default='/var/log/expensebot.log')
+    parser.add_argument('--state-path', action='store', type=str,
+                        default=os.path.expanduser('~/.expensebot-state.yaml'),
+                        help='File used to persist mutable bot settings')
     args = parser.parse_args(args=args)
     setup_logging('DEBUG' if args.verbose else 'INFO',
                   args.log_path,
                   args.interactive)
     config = load_config(args.config)
-    bot = ExpenseBot(config)
+    bot = ExpenseBot(config, state_path=args.state_path)
     bot.start()
 
 
