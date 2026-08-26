@@ -1,0 +1,11 @@
+.git
+.gitignore
+.expensebotrc
+.expensebot-state.yaml
+Dockerfile
+compose.yml
+service
+tests
+work
+**/__pycache__
+**/*.pyc

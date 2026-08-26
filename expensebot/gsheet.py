@@ -14,7 +14,7 @@ import time
 
 import gspread
 from gspread.exceptions import APIError
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 
 from expensebot.config import load_config
 
@@ -62,7 +62,9 @@ def open_by_key(config, spreadsheet_id):
 def authorize(config):
     """Authorize in GSheets."""
     json_credential = json.loads(config['credentials']['gspread']['credential'])
-    credentials = ServiceAccountCredentials.from_json_keyfile_dict(json_credential, scope)
+    credentials = Credentials.from_service_account_info(
+        json_credential, scopes=scope
+    )
     return gspread.authorize(credentials)
 
 

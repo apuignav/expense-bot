@@ -46,7 +46,7 @@ def setup_logging(level, path, interactive):
     """Configure logging."""
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
-    logging.getLogger('oauth2client.client').setLevel(logging.WARN)
+    logging.getLogger('google.auth.transport.requests').setLevel(logging.WARN)
     if path:
         filelog = TimedRotatingFileHandler(
             path, when='midnight', interval=1, backupCount=LOG_BACKUP_COUNT
