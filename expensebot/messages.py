@@ -9,10 +9,12 @@
 
 import re
 import logging
-from pathlib import Path
 import yaml
 
-import importlib_resources as resources
+try:
+    from importlib import resources
+except ImportError:  # pragma: no cover - Python 3.7/3.8 compatibility
+    import importlib_resources as resources
 from fuzzywuzzy import fuzz, process
 import datefinder
 

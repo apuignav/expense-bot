@@ -1,0 +1,26 @@
+services:
+  expense-bot:
+    build:
+      context: .
+    image: expense-bot:local
+    container_name: expense-bot
+    restart: unless-stopped
+    init: true
+    user: "${PUID:-10001}:${PGID:-10001}"
+    environment:
+      TZ: ${TZ:-Europe/Zurich}
+    volumes:
+      - ${EXPENSEBOT_CONFIG:-./.expensebotrc}:/config/expensebot.yaml:ro
+      - ${DOCKERDIR}/expense-bot:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"

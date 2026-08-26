@@ -1,0 +1,6 @@
+.expensebotrc
+.expensebot-state.yaml
+__pycache__/
+*.pyc
+build/
+*.egg-info/

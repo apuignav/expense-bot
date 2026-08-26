@@ -1,0 +1,24 @@
+# Copy this file to .expensebotrc and replace every placeholder.
+credentials:
+  telegram:
+    token: "TELEGRAM_BOT_TOKEN"
+    authorized-ids:
+      - 123456789
+  gspread:
+    # Keep the complete Google service-account JSON as a quoted JSON string.
+    credential: '{"type":"service_account","project_id":"PROJECT_ID"}'
+
+expenses-sheet: "GOOGLE_SHEET_ID"
+nw-sheet: "GOOGLE_CATEGORY_SHEET_ID"
+investment-sheet: "GOOGLE_INVESTMENT_SHEET_ID"
+
+currency:
+  reference: CHF
+  default: CHF
+
+category-discovery:
+  enabled: true
+  months: 6
+  minimum-occurrences: 2
+  cache-ttl-hours: 6
+  retry-delay-minutes: 15

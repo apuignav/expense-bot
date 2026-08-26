@@ -44,3 +44,36 @@ category-discovery:
   cache-ttl-hours: 6
   retry-delay-minutes: 15
 ```
+
+Docker Compose deployment
+-------------------------
+
+The container uses a multi-stage Python 3.11 build and runs as an unprivileged
+user with a read-only root filesystem. It exposes no ports: Telegram polling
+and Google Sheets access are outbound connections.
+
+1. Copy the existing Raspberry Pi configuration without committing it:
+
+   ```bash
+   cp .expensebotrc.example .expensebotrc
+   chmod 600 .expensebotrc
+   ```
+
+2. Ensure `DOCKERDIR`, `PUID`, `PGID`, and `TZ` are available in the Compose
+   environment, then create the persistent state directory:
+
+   ```bash
+   mkdir -p "${DOCKERDIR}/expense-bot"
+   ```
+
+3. Build and start the bot:
+
+   ```bash
+   docker compose up -d --build
+   docker compose logs -f expense-bot
+   ```
+
+The Compose stack writes mutable state only to `${DOCKERDIR}/expense-bot` and
+uses Docker's `local` logging driver with three 10 MB rotated files. Stop the
+old Raspberry Pi service before starting this container so that two polling
+instances do not consume the same Telegram updates.
