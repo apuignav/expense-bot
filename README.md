@@ -73,8 +73,8 @@ and Google Sheets access are outbound connections.
    ```
 
 The configuration is mounted read-only from
-`${DOCKERDIR}/expense-bot/config/expensebot.yaml`. Container deployments do not
-persist `/setCurrency` changes; a restart restores the default currency from
-the configuration. Docker's `local` logging driver retains three 10 MB rotated
-files. Stop the old Raspberry Pi service before starting this container so that
-two polling instances do not consume the same Telegram updates.
+`${DOCKERDIR}/expense-bot/config/expensebot.yaml`. Existing mutable state stays
+at `${DOCKERDIR}/expense-bot/state.yaml`; there is no state migration. Docker's
+`local` logging driver retains three 10 MB rotated files. Stop the old Raspberry
+Pi service before starting this container so that two polling instances do not
+consume the same Telegram updates.
