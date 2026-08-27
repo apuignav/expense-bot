@@ -10,7 +10,7 @@ services:
     environment:
       TZ: ${TZ:-Europe/Zurich}
     volumes:
-      - ${EXPENSEBOT_CONFIG:-./.expensebotrc}:/config/expensebot.yaml:ro
+      - ${DOCKERDIR}/expense-bot/config/expensebot.yaml:/config/expensebot.yaml:ro
       - ${DOCKERDIR}/expense-bot:/data
     read_only: true
     tmpfs:
