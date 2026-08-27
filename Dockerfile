@@ -40,4 +40,4 @@ USER expensebot
 WORKDIR /data
 
 ENTRYPOINT ["expensebot"]
-CMD ["--config", "/config/expensebot.yaml", "--state-path", "/data/state.yaml", "--log-path", "", "--interactive"]
+CMD ["--config", "/config/expensebot.yaml", "--state-path", "", "--log-path", "", "--interactive"]

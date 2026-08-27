@@ -11,7 +11,6 @@ services:
       TZ: ${TZ:-Europe/Zurich}
     volumes:
       - ${DOCKERDIR}/expense-bot/config/expensebot.yaml:/config/expensebot.yaml:ro
-      - ${DOCKERDIR}/expense-bot/data:/data
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777

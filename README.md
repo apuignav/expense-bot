@@ -52,10 +52,10 @@ The container uses a multi-stage Python 3.11 build and runs as an unprivileged
 user with a read-only root filesystem. It exposes no ports: Telegram polling
 and Google Sheets access are outbound connections.
 
-1. Create the configuration and data directories outside the Git checkout:
+1. Create the configuration directory outside the Git checkout:
 
    ```bash
-   mkdir -p "${DOCKERDIR}/expense-bot/config" "${DOCKERDIR}/expense-bot/data"
+   mkdir -p "${DOCKERDIR}/expense-bot/config"
    cp .expensebotrc.example "${DOCKERDIR}/expense-bot/config/expensebot.yaml"
    chmod 600 "${DOCKERDIR}/expense-bot/config/expensebot.yaml"
    ```
@@ -64,18 +64,7 @@ and Google Sheets access are outbound connections.
    category configuration. In the homelab deployment this file is generated
    from Proton Pass instead of being edited manually.
 
-2. If upgrading an existing container deployment, move its state into the new
-   data subdirectory before starting the changed stack:
-
-   ```bash
-   if [ -f "${DOCKERDIR}/expense-bot/state.yaml" ] && \
-      [ ! -e "${DOCKERDIR}/expense-bot/data/state.yaml" ]; then
-       mv "${DOCKERDIR}/expense-bot/state.yaml" \
-          "${DOCKERDIR}/expense-bot/data/state.yaml"
-   fi
-   ```
-
-3. Ensure `DOCKERDIR`, `PUID`, `PGID`, and `TZ` are available in the Compose
+2. Ensure `DOCKERDIR`, `PUID`, `PGID`, and `TZ` are available in the Compose
    environment, then build and start the bot:
 
    ```bash
@@ -84,8 +73,8 @@ and Google Sheets access are outbound connections.
    ```
 
 The configuration is mounted read-only from
-`${DOCKERDIR}/expense-bot/config/expensebot.yaml`. Mutable state is isolated in
-`${DOCKERDIR}/expense-bot/data`, and Docker's `local` logging driver retains
-three 10 MB rotated files. Stop the old Raspberry Pi service before starting
-this container so that two polling instances do not consume the same Telegram
-updates.
+`${DOCKERDIR}/expense-bot/config/expensebot.yaml`. Container deployments do not
+persist `/setCurrency` changes; a restart restores the default currency from
+the configuration. Docker's `local` logging driver retains three 10 MB rotated
+files. Stop the old Raspberry Pi service before starting this container so that
+two polling instances do not consume the same Telegram updates.
