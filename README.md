@@ -34,6 +34,22 @@ whose categories all agree. The history is loaded at startup and refreshed
 lazily when an unmatched expense arrives after the six-hour cache lifetime.
 Failed refreshes retain stale history and are retried after fifteen minutes.
 
+Interactive category correction
+-------------------------------
+
+An expense that still has no category after fixed, fuzzy, and historical
+matching is saved immediately as `Undefined`, then the bot sends an inline
+keyboard containing the configured expense categories. Selecting a category
+updates the exact row already written to Google Sheets and records the choice
+in the in-memory history so later expenses can benefit from it. **Leave
+undefined** dismisses the prompt without changing the sheet.
+
+Each prompt belongs to the authorized user who created the expense, is
+single-use, and expires after 24 hours. Pending prompts are deliberately kept
+only in memory: after a restart an old button reports that it expired, while the
+expense remains safely recorded as `Undefined`. Multiline messages receive a
+separate category prompt for every undefined expense.
+
 Defaults can be overridden in the bot configuration:
 
 ```yaml
