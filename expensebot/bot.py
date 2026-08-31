@@ -9,12 +9,15 @@
 
 from functools import wraps
 from collections import Counter, defaultdict
+from dataclasses import dataclass
+from threading import Lock
 
 import logging
 
 import datetime
 import os
 import re
+import secrets
 import tempfile
 import time
 import unicodedata
@@ -22,7 +25,9 @@ import unicodedata
 import yaml
 
 import telegram
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.ext import (
+    Updater, CommandHandler, MessageHandler, CallbackQueryHandler, Filters
+)
 from gspread.exceptions import APIError
 
 from expensebot.messages import ExpenseParser, ParseError
@@ -32,6 +37,32 @@ import expensebot.gsheet as gsheet
 
 CURRENCY_COLS = {"CHF": 3, "EUR": 4}
 UNDEFINED_CATEGORY = "Undefined"
+CATEGORY_CALLBACK_PREFIX = "expense-category:"
+CATEGORY_SELECTION_TTL = 24 * 60 * 60
+CATEGORY_BUTTONS_PER_ROW = 2
+
+
+@dataclass(frozen=True)
+class SavedExpense:
+    """An expense and the exact worksheet row where it was saved."""
+
+    concept: str
+    value: str
+    category: str
+    date: datetime.datetime
+    spreadsheet_id: str
+    worksheet_name: str
+    row: int
+
+
+@dataclass(frozen=True)
+class PendingCategorySelection:
+    """A short-lived category correction offered to one Telegram user."""
+
+    expense: SavedExpense
+    user_id: int
+    categories: tuple
+    created_at: float
 
 
 class ExpenseBot:
@@ -60,6 +91,8 @@ class ExpenseBot:
         self._category_history = {}
         self._history_refreshed_at = None
         self._history_refresh_attempted_at = None
+        self._pending_categories = {}
+        self._pending_categories_lock = Lock()
         self._updater = self.create_bot()
         categories = self.get_expense_categories()
         self._parser = ExpenseParser(categories)
@@ -192,17 +225,21 @@ class ExpenseBot:
             """Answer text messages."""
             logging.debug("Got message")
             out = ""
+            undefined_expenses = []
             for expense_text in update.message.text.split("\n"):
                 logging.info("Got expense -> %s", expense_text)
                 try:
-                    concept, value, category, date = self.add_expense(expense_text)
+                    expense = self._save_expense(expense_text)
                     if out:
                         out += "\n"
                     out += "Added expense of {} in '{}' in category '{}' on {}".format(
-                        value, concept, category, date.strftime("%d/%m/%Y")
+                        expense.value,
+                        expense.concept,
+                        expense.category,
+                        expense.date.strftime("%d/%m/%Y"),
                     )
-                    if category == "Undefined":
-                        out += "\n*Category is undefined, you will need to correct this manually*"
+                    if expense.category == UNDEFINED_CATEGORY:
+                        undefined_expenses.append(expense)
                 except ValueError as error:
                     out += "Adding expense failed -> {}".format(error)
                 except APIError:
@@ -218,6 +255,13 @@ class ExpenseBot:
                 text=out,
                 parse_mode=telegram.ParseMode.MARKDOWN,
             )
+            for expense in undefined_expenses:
+                self.send_category_prompt(
+                    context.bot,
+                    update.message.chat_id,
+                    update.effective_user.id,
+                    expense,
+                )
 
         if not bot_config:
             bot_config = self._config["credentials"]["telegram"]
@@ -232,6 +276,12 @@ class ExpenseBot:
         updater.dispatcher.add_handler(CommandHandler("test", cb_test, pass_args=True))
         updater.dispatcher.add_handler(
             CommandHandler("invest", cb_invest, pass_args=True)
+        )
+        updater.dispatcher.add_handler(
+            CallbackQueryHandler(
+                self.handle_category_callback,
+                pattern="^{}".format(CATEGORY_CALLBACK_PREFIX),
+            )
         )
         # Add message handler
         updater.dispatcher.add_handler(MessageHandler(Filters.text, cb_messages))
@@ -431,6 +481,200 @@ class ExpenseBot:
         counts = self._category_history.setdefault(normalized_concept, Counter())
         counts[normalized_category] += 1
 
+    def _category_choices(self):
+        """Return current categories in their configured display order."""
+        return tuple(
+            category for category in self._parser.categories.values()
+            if category.strip().lower() != UNDEFINED_CATEGORY.lower()
+        )
+
+    def _register_category_selection(self, expense, user_id):
+        """Store a pending correction and return its opaque callback token."""
+        categories = self._category_choices()
+        if not categories:
+            return None
+        token = secrets.token_hex(6)
+        now = time.monotonic()
+        pending = PendingCategorySelection(
+            expense=expense,
+            user_id=user_id,
+            categories=categories,
+            created_at=now,
+        )
+        with self._pending_categories_lock:
+            expired_tokens = [
+                pending_token
+                for pending_token, selection in self._pending_categories.items()
+                if now - selection.created_at >= CATEGORY_SELECTION_TTL
+            ]
+            for expired_token in expired_tokens:
+                self._pending_categories.pop(expired_token, None)
+            self._pending_categories[token] = pending
+        return token
+
+    def _category_keyboard(self, token, categories):
+        """Build a compact two-column category keyboard."""
+        buttons = [
+            telegram.InlineKeyboardButton(
+                category,
+                callback_data="{}{}:{}".format(
+                    CATEGORY_CALLBACK_PREFIX, token, index
+                ),
+            )
+            for index, category in enumerate(categories)
+        ]
+        rows = [
+            buttons[index:index + CATEGORY_BUTTONS_PER_ROW]
+            for index in range(0, len(buttons), CATEGORY_BUTTONS_PER_ROW)
+        ]
+        rows.append([
+            telegram.InlineKeyboardButton(
+                "Leave undefined",
+                callback_data="{}{}:skip".format(
+                    CATEGORY_CALLBACK_PREFIX, token
+                ),
+            )
+        ])
+        return telegram.InlineKeyboardMarkup(rows)
+
+    def send_category_prompt(self, telegram_bot, chat_id, user_id, expense):
+        """Offer category buttons for an expense already saved as undefined."""
+        token = self._register_category_selection(expense, user_id)
+        if token is None:
+            logging.warning("Cannot offer category correction without categories")
+            telegram_bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "Category is undefined and no category choices are available. "
+                    "Please correct it in the sheet."
+                ),
+            )
+            return
+        pending = self._pending_category_selection(token, user_id)
+        telegram_bot.send_message(
+            chat_id=chat_id,
+            text="Choose a category for '{} — {}':".format(
+                expense.concept, expense.value
+            ),
+            reply_markup=self._category_keyboard(token, pending.categories),
+        )
+
+    def _pending_category_selection(self, token, user_id):
+        """Return an unexpired pending correction belonging to the user."""
+        with self._pending_categories_lock:
+            pending = self._pending_categories.get(token)
+            if pending is None or pending.user_id != user_id:
+                return None
+            if time.monotonic() - pending.created_at >= CATEGORY_SELECTION_TTL:
+                self._pending_categories.pop(token, None)
+                return None
+            return pending
+
+    def _claim_category_selection(self, token, user_id):
+        """Atomically claim a pending correction for one callback."""
+        with self._pending_categories_lock:
+            pending = self._pending_categories.get(token)
+            if pending is None or pending.user_id != user_id:
+                return None
+            if time.monotonic() - pending.created_at >= CATEGORY_SELECTION_TTL:
+                self._pending_categories.pop(token, None)
+                return None
+            return self._pending_categories.pop(token)
+
+    def _restore_category_selection(self, token, pending):
+        """Restore a claimed correction after a retryable Sheets failure."""
+        with self._pending_categories_lock:
+            self._pending_categories[token] = pending
+
+    def update_expense_category(self, expense, category):
+        """Replace the category in the exact row recorded during insertion."""
+        spreadsheet = gsheet.open_by_key(self._config, expense.spreadsheet_id)
+        worksheet = gsheet.call_with_retry(
+            lambda: spreadsheet.worksheet(expense.worksheet_name),
+            description="Opening expense worksheet for category correction",
+        )
+        gsheet.call_with_retry(
+            lambda: worksheet.update_cell(expense.row, 6, category),
+            description="Correcting expense category",
+        )
+        self.record_category_history(expense.concept, category)
+
+    def handle_category_callback(self, update, context):
+        """Apply an inline category selection to a saved undefined expense."""
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if user_id not in self._authorized_ids:
+            logging.error("Unauthorized category correction denied for %s.", user_id)
+            query.answer("Unauthorized user", show_alert=True)
+            return
+
+        callback = query.data[len(CATEGORY_CALLBACK_PREFIX):]
+        try:
+            token, choice = callback.rsplit(":", 1)
+        except ValueError:
+            query.answer("This category choice is invalid.", show_alert=True)
+            return
+
+        pending = self._pending_category_selection(token, user_id)
+        if pending is None:
+            query.answer(
+                "This category choice has expired or was already used.",
+                show_alert=True,
+            )
+            return
+
+        if choice == "skip":
+            pending = self._claim_category_selection(token, user_id)
+            if pending is None:
+                query.answer(
+                    "This category choice has expired or was already used.",
+                    show_alert=True,
+                )
+                return
+            query.answer("Expense left undefined")
+            query.edit_message_text(
+                "Left '{}' ({}) in category '{}'.".format(
+                    pending.expense.concept,
+                    pending.expense.value,
+                    UNDEFINED_CATEGORY,
+                )
+            )
+            return
+
+        try:
+            choice_index = int(choice)
+            if choice_index < 0:
+                raise IndexError
+            category = pending.categories[choice_index]
+        except (ValueError, IndexError):
+            query.answer("This category choice is invalid.", show_alert=True)
+            return
+
+        pending = self._claim_category_selection(token, user_id)
+        if pending is None:
+            query.answer(
+                "This category choice has expired or was already used.",
+                show_alert=True,
+            )
+            return
+        try:
+            self.update_expense_category(pending.expense, category)
+        except APIError:
+            logging.exception("Google Sheets unavailable during category correction")
+            self._restore_category_selection(token, pending)
+            query.answer(
+                "Google Sheets is temporarily unavailable; please try again.",
+                show_alert=True,
+            )
+            return
+
+        query.answer("Category updated")
+        query.edit_message_text(
+            "Updated '{}' ({}) to category '{}'.".format(
+                pending.expense.concept, pending.expense.value, category
+            )
+        )
+
     def parse_expense(self, expense_text):
         """Parse and interpret expense text."""
         try:
@@ -448,8 +692,8 @@ class ExpenseBot:
             category = UNDEFINED_CATEGORY
         return concept, value, currency, category, date
 
-    def add_expense(self, expense_text, spreadsheet_id=None):
-        """Add expense to corresponding sheet."""
+    def _save_expense(self, expense_text, spreadsheet_id=None):
+        """Add an expense and return its exact persisted location."""
 
         def init_expense_worksheet(sheet):
             gsheet.call_with_retry(
@@ -501,7 +745,20 @@ class ExpenseBot:
             description="Saving expense"
         )
         self.record_category_history(concept, category)
-        return concept, "{} {}".format(value, currency), category, date
+        return SavedExpense(
+            concept=concept,
+            value="{} {}".format(value, currency),
+            category=category,
+            date=date,
+            spreadsheet_id=spreadsheet_id,
+            worksheet_name=worksheet_name,
+            row=row_to_update,
+        )
+
+    def add_expense(self, expense_text, spreadsheet_id=None):
+        """Add expense to the corresponding sheet."""
+        expense = self._save_expense(expense_text, spreadsheet_id)
+        return expense.concept, expense.value, expense.category, expense.date
 
     def add_investment(self, investment_text, spreadsheet_id=None):
         """Add investment in the corresponding sheet."""

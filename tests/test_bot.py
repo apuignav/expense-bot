@@ -7,11 +7,17 @@ import tempfile
 import time
 import unittest
 from collections import Counter
+from threading import Lock
 from unittest.mock import Mock, patch
 
 from gspread.exceptions import APIError
 
-from expensebot.bot import ExpenseBot
+from expensebot.bot import (
+    CATEGORY_CALLBACK_PREFIX,
+    CATEGORY_SELECTION_TTL,
+    ExpenseBot,
+    SavedExpense,
+)
 
 
 class AddExpenseTest(unittest.TestCase):
@@ -31,12 +37,15 @@ class AddExpenseTest(unittest.TestCase):
         worksheet.acell.return_value.value = "4"
         get_worksheet.return_value = worksheet
 
-        result = bot.add_expense("Coop 11.3")
+        result = bot._save_expense("Coop 11.3")
 
-        self.assertEqual(
-            ("Coop", "11.3 CHF", "Food", datetime.datetime(2026, 8, 24, 18, 22)),
-            result,
-        )
+        self.assertEqual("Coop", result.concept)
+        self.assertEqual("11.3 CHF", result.value)
+        self.assertEqual("Food", result.category)
+        self.assertEqual(datetime.datetime(2026, 8, 24, 18, 22), result.date)
+        self.assertEqual("sheet-id", result.spreadsheet_id)
+        self.assertEqual("08/2026", result.worksheet_name)
+        self.assertEqual(6, result.row)
         open_by_key.assert_called_once_with(bot._config, "sheet-id")
         worksheet.update.assert_called_once_with(
             "A6:F6",
@@ -44,6 +53,156 @@ class AddExpenseTest(unittest.TestCase):
             raw=False,
         )
         worksheet.update_cell.assert_not_called()
+
+    def test_public_add_expense_keeps_existing_return_tuple(self):
+        bot = ExpenseBot.__new__(ExpenseBot)
+        saved = SavedExpense(
+            concept="Coop",
+            value="11.3 CHF",
+            category="Food",
+            date=datetime.datetime(2026, 8, 24, 18, 22),
+            spreadsheet_id="sheet-id",
+            worksheet_name="08/2026",
+            row=6,
+        )
+        bot._save_expense = Mock(return_value=saved)
+
+        result = bot.add_expense("Coop 11.3")
+
+        self.assertEqual(
+            ("Coop", "11.3 CHF", "Food", datetime.datetime(2026, 8, 24, 18, 22)),
+            result,
+        )
+
+
+class CategorySelectionTest(unittest.TestCase):
+
+    def make_bot(self):
+        bot = ExpenseBot.__new__(ExpenseBot)
+        bot._authorized_ids = [7]
+        bot._config = {"expenses-sheet": "sheet-id"}
+        bot._history_enabled = True
+        bot._category_history = {}
+        bot._parser = Mock()
+        bot._parser.categories = {"compra": "Compra", "ocio": "Ocio"}
+        bot._pending_categories = {}
+        bot._pending_categories_lock = Lock()
+        return bot
+
+    @staticmethod
+    def expense():
+        return SavedExpense(
+            concept="Amazon",
+            value="22.50 CHF",
+            category="Undefined",
+            date=datetime.datetime(2026, 8, 31, 10, 0),
+            spreadsheet_id="sheet-id",
+            worksheet_name="08/2026",
+            row=42,
+        )
+
+    @patch("expensebot.bot.secrets.token_hex", return_value="abcdef123456")
+    def test_prompt_contains_category_buttons_and_safe_callback_data(self, _token):
+        bot = self.make_bot()
+        telegram_bot = Mock()
+
+        bot.send_category_prompt(telegram_bot, 99, 7, self.expense())
+
+        call = telegram_bot.send_message.call_args
+        self.assertEqual(99, call.kwargs["chat_id"])
+        keyboard = call.kwargs["reply_markup"].inline_keyboard
+        self.assertEqual(["Compra", "Ocio"], [button.text for button in keyboard[0]])
+        self.assertEqual("Leave undefined", keyboard[1][0].text)
+        callback_values = [
+            button.callback_data for row in keyboard for button in row
+        ]
+        self.assertTrue(all(value.startswith(CATEGORY_CALLBACK_PREFIX)
+                            for value in callback_values))
+        self.assertTrue(all(len(value.encode("utf-8")) <= 64
+                            for value in callback_values))
+
+    @patch("expensebot.bot.gsheet.call_with_retry")
+    @patch("expensebot.bot.gsheet.open_by_key")
+    @patch("expensebot.bot.secrets.token_hex", return_value="abcdef123456")
+    def test_selection_updates_exact_row_and_teaches_history(
+            self, _token, open_by_key, call_with_retry):
+        bot = self.make_bot()
+        worksheet = Mock()
+        spreadsheet = Mock()
+        spreadsheet.worksheet.return_value = worksheet
+        open_by_key.return_value = spreadsheet
+        call_with_retry.side_effect = lambda action, **_kwargs: action()
+        token = bot._register_category_selection(self.expense(), 7)
+        query = Mock(data="{}{}:1".format(CATEGORY_CALLBACK_PREFIX, token))
+        update = Mock(callback_query=query, effective_user=Mock(id=7))
+
+        bot.handle_category_callback(update, Mock())
+
+        open_by_key.assert_called_once_with(bot._config, "sheet-id")
+        spreadsheet.worksheet.assert_called_once_with("08/2026")
+        worksheet.update_cell.assert_called_once_with(42, 6, "Ocio")
+        self.assertEqual(Counter({"ocio": 1}), bot._category_history["amazon"])
+        self.assertNotIn(token, bot._pending_categories)
+        query.answer.assert_called_once_with("Category updated")
+        query.edit_message_text.assert_called_once_with(
+            "Updated 'Amazon' (22.50 CHF) to category 'Ocio'."
+        )
+
+    @patch("expensebot.bot.secrets.token_hex", return_value="abcdef123456")
+    def test_sheets_failure_keeps_selection_available_for_retry(self, _token):
+        bot = self.make_bot()
+        token = bot._register_category_selection(self.expense(), 7)
+        bot.update_expense_category = Mock(side_effect=APIError(FakeResponse()))
+        query = Mock(data="{}{}:0".format(CATEGORY_CALLBACK_PREFIX, token))
+        update = Mock(callback_query=query, effective_user=Mock(id=7))
+
+        bot.handle_category_callback(update, Mock())
+
+        self.assertIn(token, bot._pending_categories)
+        query.answer.assert_called_once_with(
+            "Google Sheets is temporarily unavailable; please try again.",
+            show_alert=True,
+        )
+        query.edit_message_text.assert_not_called()
+
+    @patch("expensebot.bot.secrets.token_hex", return_value="abcdef123456")
+    def test_leave_undefined_dismisses_selection_without_sheet_write(self, _token):
+        bot = self.make_bot()
+        token = bot._register_category_selection(self.expense(), 7)
+        bot.update_expense_category = Mock()
+        query = Mock(data="{}{}:skip".format(CATEGORY_CALLBACK_PREFIX, token))
+        update = Mock(callback_query=query, effective_user=Mock(id=7))
+
+        bot.handle_category_callback(update, Mock())
+
+        bot.update_expense_category.assert_not_called()
+        self.assertNotIn(token, bot._pending_categories)
+        query.answer.assert_called_once_with("Expense left undefined")
+
+    @patch("expensebot.bot.secrets.token_hex", return_value="abcdef123456")
+    def test_unauthorized_user_cannot_change_category(self, _token):
+        bot = self.make_bot()
+        token = bot._register_category_selection(self.expense(), 7)
+        bot.update_expense_category = Mock()
+        query = Mock(data="{}{}:0".format(CATEGORY_CALLBACK_PREFIX, token))
+        update = Mock(callback_query=query, effective_user=Mock(id=8))
+
+        bot.handle_category_callback(update, Mock())
+
+        bot.update_expense_category.assert_not_called()
+        self.assertIn(token, bot._pending_categories)
+        query.answer.assert_called_once_with("Unauthorized user", show_alert=True)
+
+    @patch("expensebot.bot.time.monotonic", return_value=10000)
+    def test_expired_selection_is_removed(self, _monotonic):
+        bot = self.make_bot()
+        pending = Mock(user_id=7, created_at=10000 - CATEGORY_SELECTION_TTL)
+        bot._pending_categories["expired"] = pending
+
+        result = bot._pending_category_selection("expired", 7)
+
+        self.assertIsNone(result)
+        self.assertNotIn("expired", bot._pending_categories)
 
 
 class LifecycleTest(unittest.TestCase):
