@@ -377,11 +377,16 @@ class ExpenseBot:
             description="Loading expense categories"
         )
         for row_num, val in enumerate(values):
-            if val == "Total gastos":
-                break
-            if not val or row_num == 0:
+            if row_num == 0:
                 continue
-            cats.append(val)
+            category = str(val).strip()
+            if not category:
+                if cats:
+                    break
+                continue
+            if category.casefold() == "gastos":
+                break
+            cats.append(category)
         return cats
 
     @staticmethod

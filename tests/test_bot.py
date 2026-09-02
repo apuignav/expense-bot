@@ -75,6 +75,49 @@ class AddExpenseTest(unittest.TestCase):
         )
 
 
+class ExpenseCategoriesTest(unittest.TestCase):
+
+    @staticmethod
+    def make_bot():
+        bot = ExpenseBot.__new__(ExpenseBot)
+        bot._config = {"nw-sheet": "category-sheet-id"}
+        return bot
+
+    @patch("expensebot.bot.gsheet.call_with_retry")
+    @patch("expensebot.bot.gsheet.open_by_key")
+    def test_stops_at_blank_row_before_totals(
+            self, open_by_key, call_with_retry):
+        bot = self.make_bot()
+        worksheet = Mock()
+        open_by_key.return_value = Mock()
+        call_with_retry.side_effect = [worksheet, [
+            "2026", "Impuestos", "Guardería", "Otros", "",
+            "Gastos", "Ingresos", "Ahorro"
+        ]]
+
+        categories = bot.get_expense_categories()
+
+        self.assertEqual(
+            ["Impuestos", "Guardería", "Otros"], categories
+        )
+        open_by_key.assert_called_once_with(bot._config, "category-sheet-id")
+
+    @patch("expensebot.bot.gsheet.call_with_retry")
+    @patch("expensebot.bot.gsheet.open_by_key")
+    def test_gastos_is_a_fallback_boundary(
+            self, open_by_key, call_with_retry):
+        bot = self.make_bot()
+        worksheet = Mock()
+        open_by_key.return_value = Mock()
+        call_with_retry.side_effect = [worksheet, [
+            "2026", " Impuestos ", "Otros", " GASTOS ", "Ingresos"
+        ]]
+
+        categories = bot.get_expense_categories()
+
+        self.assertEqual(["Impuestos", "Otros"], categories)
+
+
 class CategorySelectionTest(unittest.TestCase):
 
     def make_bot(self):
