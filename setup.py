@@ -41,7 +41,7 @@ setup(name='expensebot',
                         'datefinder==0.7.0',
                         'importlib-resources>=3.0.0; python_version < "3.9"',
                         'setuptools<81',
-                        'urllib3==1.26.20'
+                        'urllib3==2.7.0'
                         ],
       entry_points={'console_scripts': ['expensebot = expensebot.cli:main']})
 
