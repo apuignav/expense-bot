@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
 """Tests for command-line logging configuration."""
 
+import logging
 import os
 import tempfile
 import unittest
 from logging.handlers import TimedRotatingFileHandler
 from unittest.mock import patch
 
-from expensebot.cli import LOG_BACKUP_COUNT, delete_expired_log_files, main
+from expensebot.cli import LOG_BACKUP_COUNT, delete_expired_log_files, main, setup_logging
+
+
+class LoggingSetupTest(unittest.TestCase):
+
+    def test_quiets_httpx_so_bot_token_stays_out_of_logs(self):
+        setup_logging("INFO", "", False)
+
+        self.assertEqual(logging.WARNING, logging.getLogger("httpx").level)
 
 
 class LogRetentionTest(unittest.TestCase):
