@@ -10,8 +10,9 @@ services:
     environment:
       TZ: ${TZ:-Europe/Zurich}
     volumes:
-      - ${DOCKERDIR}/expense-bot/config/expensebot.yaml:/config/expensebot.yaml:ro
-      - ${DOCKERDIR}/expense-bot:/data
+      # Paths come from the project .env file (see .env.example).
+      - ${EXPENSEBOT_CONFIG_FILE:?Set EXPENSEBOT_CONFIG_FILE in .env}:/config/expensebot.yaml:ro
+      - ${EXPENSEBOT_DATA_DIR:?Set EXPENSEBOT_DATA_DIR in .env}:/data
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
