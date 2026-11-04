@@ -47,6 +47,9 @@ def setup_logging(level, path, interactive):
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
     logging.getLogger('google.auth.transport.requests').setLevel(logging.WARN)
+    # Request URLs contain the bot token, so keep the HTTP client loggers at WARNING.
+    logging.getLogger('httpx').setLevel(logging.WARNING)
+    logging.getLogger('httpcore').setLevel(logging.WARNING)
     if path:
         filelog = TimedRotatingFileHandler(
             path, when='midnight', interval=1, backupCount=LOG_BACKUP_COUNT
