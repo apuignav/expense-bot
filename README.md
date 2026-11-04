@@ -68,31 +68,30 @@ The container uses a multi-stage Python 3.11 build and runs as an unprivileged
 user with a read-only root filesystem. It exposes no ports: Telegram polling
 and Google Sheets access are outbound connections.
 
-1. Create the configuration directory outside the Git checkout:
+1. Create the bot configuration from the example and restrict its permissions:
 
    ```bash
-   mkdir -p "${DOCKERDIR}/expense-bot/config"
-   cp .expensebotrc.example "${DOCKERDIR}/expense-bot/config/expensebot.yaml"
-   chmod 600 "${DOCKERDIR}/expense-bot/config/expensebot.yaml"
+   cp .expensebotrc.example /path/to/expensebot.yaml
+   chmod 600 /path/to/expensebot.yaml
    ```
 
    Fill the copied file with the Telegram, Google Sheets, currency, and
-   category configuration. On the home server, the homelab repo generates
-   this file from the Proton Pass note into `${SECRETS_DIR}` (the homelab
-   secrets directory) via `scripts/refresh-secrets`, and Compose mounts it
-   from there instead of editing it manually.
+   category configuration. It contains secrets, so keep it outside the Git
+   checkout.
 
-2. Ensure `DOCKERDIR`, `SECRETS_DIR`, `PUID`, `PGID`, and `TZ` are available in the
-   Compose environment, then build and start the bot:
+2. Create a `.env` file next to `compose.yml` (see `.env.example`) with
+   `EXPENSEBOT_CONFIG_FILE` (path to the YAML above), `EXPENSEBOT_DATA_DIR`
+   (a directory writable by `PUID:PGID`, holding the mutable state such as the
+   default currency), and optionally `PUID`, `PGID`, and `TZ`. Then build and
+   start the bot:
 
    ```bash
    docker compose up -d --build
    docker compose logs -f expense-bot
    ```
 
-The configuration is mounted read-only from `${SECRETS_DIR}/expensebot.yaml`,
-which the homelab repo generates from Proton Pass via `scripts/refresh-secrets`.
-Existing mutable state stays at `${DOCKERDIR}/expense-bot/state.yaml`; there is no state migration. Docker's
+The configuration is mounted read-only at `/config/expensebot.yaml`. Mutable
+state lives in `EXPENSEBOT_DATA_DIR`; there is no state migration. Docker's
 `local` logging driver retains three 10 MB rotated files. Stop the old Raspberry
 Pi service before starting this container so that two polling instances do not
 consume the same Telegram updates.
