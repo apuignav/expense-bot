@@ -77,20 +77,22 @@ and Google Sheets access are outbound connections.
    ```
 
    Fill the copied file with the Telegram, Google Sheets, currency, and
-   category configuration. In the homelab deployment this file is generated
-   from Proton Pass instead of being edited manually.
+   category configuration. On the home server, the homelab repo generates
+   this file from the Proton Pass note into `${SECRETS_DIR}` (the homelab
+   secrets directory) via `scripts/refresh-secrets`, and Compose mounts it
+   from there instead of editing it manually.
 
-2. Ensure `DOCKERDIR`, `PUID`, `PGID`, and `TZ` are available in the Compose
-   environment, then build and start the bot:
+2. Ensure `DOCKERDIR`, `SECRETS_DIR`, `PUID`, `PGID`, and `TZ` are available in the
+   Compose environment, then build and start the bot:
 
    ```bash
    docker compose up -d --build
    docker compose logs -f expense-bot
    ```
 
-The configuration is mounted read-only from
-`${DOCKERDIR}/expense-bot/config/expensebot.yaml`. Existing mutable state stays
-at `${DOCKERDIR}/expense-bot/state.yaml`; there is no state migration. Docker's
+The configuration is mounted read-only from `${SECRETS_DIR}/expensebot.yaml`,
+which the homelab repo generates from Proton Pass via `scripts/refresh-secrets`.
+Existing mutable state stays at `${DOCKERDIR}/expense-bot/state.yaml`; there is no state migration. Docker's
 `local` logging driver retains three 10 MB rotated files. Stop the old Raspberry
 Pi service before starting this container so that two polling instances do not
 consume the same Telegram updates.

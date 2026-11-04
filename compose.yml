@@ -10,7 +10,8 @@ services:
     environment:
       TZ: ${TZ:-Europe/Zurich}
     volumes:
-      - ${DOCKERDIR}/expense-bot/config/expensebot.yaml:/config/expensebot.yaml:ro
+      # Written from Proton Pass by the homelab repo's scripts/refresh-secrets (config/secrets/expense-bot.map).
+      - ${SECRETS_DIR}/expensebot.yaml:/config/expensebot.yaml:ro
       - ${DOCKERDIR}/expense-bot:/data
     read_only: true
     tmpfs:
