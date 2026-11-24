@@ -236,16 +236,185 @@ class CategorySelectionTest(unittest.TestCase):
         self.assertIn(token, bot._pending_categories)
         query.answer.assert_called_once_with("Unauthorized user", show_alert=True)
 
+    @patch("expensebot.bot.secrets.token_hex", return_value="abcdef123456")
+    def test_other_authorized_user_can_answer_selection(self, _token):
+        bot = self.make_bot()
+        bot._authorized_ids = [7, 8]
+        bot.update_expense_category = Mock()
+        token = bot._register_category_selection(self.expense(), 7)
+        query = Mock(data="{}{}:1".format(CATEGORY_CALLBACK_PREFIX, token))
+        update = Mock(callback_query=query, effective_user=Mock(id=8))
+
+        bot.handle_category_callback(update, Mock())
+
+        bot.update_expense_category.assert_called_once_with(
+            self.expense(), "Ocio"
+        )
+        self.assertNotIn(token, bot._pending_categories)
+        query.answer.assert_called_once_with("Category updated")
+
+    @patch("expensebot.bot.secrets.token_hex", return_value="abcdef123456")
+    def test_selection_cannot_be_claimed_twice(self, _token):
+        bot = self.make_bot()
+        token = bot._register_category_selection(self.expense(), 7)
+
+        first = bot._claim_category_selection(token)
+        second = bot._claim_category_selection(token)
+
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+
     @patch("expensebot.bot.time.monotonic", return_value=10000)
     def test_expired_selection_is_removed(self, _monotonic):
         bot = self.make_bot()
         pending = Mock(user_id=7, created_at=10000 - CATEGORY_SELECTION_TTL)
         bot._pending_categories["expired"] = pending
 
-        result = bot._pending_category_selection("expired", 7)
+        result = bot._pending_category_selection("expired")
 
         self.assertIsNone(result)
         self.assertNotIn("expired", bot._pending_categories)
+
+
+class AddCommandTest(unittest.TestCase):
+
+    def make_bot(self):
+        bot = ExpenseBot.__new__(ExpenseBot)
+        bot._authorized_ids = [7]
+        bot._config = {
+            "credentials": {"telegram": {"token": "123:abc"}},
+            "investment-sheet": "left-over-key",
+        }
+        return bot
+
+    @staticmethod
+    def handlers(bot):
+        with patch("expensebot.bot.Updater") as updater:
+            bot.create_bot()
+        added = updater.return_value.dispatcher.add_handler.call_args_list
+        return [call.args[0] for call in added]
+
+    def add_callback(self, bot):
+        for handler in self.handlers(bot):
+            if "add" in getattr(handler, "command", []):
+                return handler.callback
+        self.fail("No /add handler registered")
+
+    @staticmethod
+    def saved(concept, category="Food"):
+        return SavedExpense(
+            concept=concept,
+            value="12.50 CHF",
+            category=category,
+            date=datetime.datetime(2026, 8, 24, 18, 22),
+            spreadsheet_id="sheet-id",
+            worksheet_name="08/2026",
+            row=5,
+        )
+
+    @staticmethod
+    def update(text, user_id=7):
+        return Mock(
+            message=Mock(text=text, chat_id=99),
+            effective_user=Mock(id=user_id),
+        )
+
+    def test_invest_command_is_gone_and_add_is_registered(self):
+        commands = [
+            command
+            for handler in self.handlers(self.make_bot())
+            for command in getattr(handler, "command", [])
+        ]
+        self.assertIn("add", commands)
+        self.assertNotIn("invest", commands)
+        self.assertFalse(hasattr(ExpenseBot, "add_investment"))
+
+    def test_single_line_with_bot_suffix(self):
+        bot = self.make_bot()
+        bot._save_expense = Mock(return_value=self.saved("Coop"))
+        context = Mock()
+
+        self.add_callback(bot)(
+            self.update("/add@expenser_bot Coop 12.50CHF"), context
+        )
+
+        bot._save_expense.assert_called_once_with("Coop 12.50CHF")
+        call = context.bot.send_message.call_args
+        self.assertEqual(99, call.kwargs["chat_id"])
+        self.assertEqual(
+            "Added expense of 12.50 CHF in 'Coop' in category 'Food' on 24/08/2026",
+            call.kwargs["text"],
+        )
+
+    def test_several_lines_keep_one_expense_per_line(self):
+        bot = self.make_bot()
+        bot._save_expense = Mock(
+            side_effect=[self.saved("Coop"), self.saved("Migros")]
+        )
+        context = Mock()
+
+        self.add_callback(bot)(
+            self.update("/add@expenser_bot Coop 12.50CHF\nMigros 5CHF"), context
+        )
+
+        self.assertEqual(
+            [("Coop 12.50CHF",), ("Migros 5CHF",)],
+            [call.args for call in bot._save_expense.call_args_list],
+        )
+        text = context.bot.send_message.call_args.kwargs["text"]
+        self.assertEqual(2, len(text.split("\n")))
+
+    def test_failed_line_gets_its_own_reply_line(self):
+        bot = self.make_bot()
+        bot._save_expense = Mock(
+            side_effect=[self.saved("Coop"), ValueError("no amount")]
+        )
+        context = Mock()
+
+        self.add_callback(bot)(
+            self.update("/add@expenser_bot Coop 12.50CHF\nMigros"), context
+        )
+
+        text = context.bot.send_message.call_args.kwargs["text"]
+        self.assertEqual(
+            [
+                "Added expense of 12.50 CHF in 'Coop' in category 'Food' on 24/08/2026",
+                "Adding expense failed -> no amount",
+            ],
+            text.split("\n"),
+        )
+
+    def test_add_without_bot_suffix_and_undefined_category_prompts(self):
+        bot = self.make_bot()
+        expense = self.saved("Amazon", category="Undefined")
+        bot._save_expense = Mock(return_value=expense)
+        bot.send_category_prompt = Mock()
+        context = Mock()
+
+        self.add_callback(bot)(self.update("/add Amazon 22CHF", user_id=7), context)
+
+        bot._save_expense.assert_called_once_with("Amazon 22CHF")
+        bot.send_category_prompt.assert_called_once_with(
+            context.bot, 99, 7, expense
+        )
+
+    def test_unauthorized_user_cannot_add(self):
+        bot = self.make_bot()
+        bot._save_expense = Mock()
+        context = Mock()
+
+        self.add_callback(bot)(self.update("/add Coop 5CHF", user_id=8), context)
+
+        bot._save_expense.assert_not_called()
+        self.assertEqual(
+            "Unauthorized user", context.bot.send_message.call_args.kwargs["text"]
+        )
+
+    def test_command_argument_text(self):
+        extract = ExpenseBot.command_argument_text
+        self.assertEqual("a 1\nb 2", extract("/add@expenser_bot a 1\nb 2"))
+        self.assertEqual("a 1", extract("/add a 1"))
+        self.assertEqual("", extract("/add"))
 
 
 class LifecycleTest(unittest.TestCase):

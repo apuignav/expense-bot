@@ -24,6 +24,19 @@ updates are desired. It installs and restarts the service only when `git pull`
 retrieves a new commit. Remove the crontab entry if deployments will be handled
 manually instead.
 
+Adding expenses with /add
+-------------------------
+
+Typed messages and the `/add` command are handled the same way. `/add <text>`
+(also `/add@<bot username> <text>`) processes the text after the command like a
+typed message: one expense per line, same parsing, same category buttons, same
+replies. Telegram does not deliver plain messages from other bots, but it does
+deliver a command addressed to this bot. The iPhone Shortcut in `shortcut/`
+uses this: a second bot posts `/add@<bot username> <shop> <amount><currency>`
+in the family group. The user ID of that second bot must be listed in
+`authorized-ids`, because `/add` is limited to authorized users like every
+other command.
+
 Historical category discovery
 -----------------------------
 
@@ -44,8 +57,9 @@ updates the exact row already written to Google Sheets and records the choice
 in the in-memory history so later expenses can benefit from it. **Leave
 undefined** dismisses the prompt without changing the sheet.
 
-Each prompt belongs to the authorized user who created the expense, is
-single-use, and expires after 24 hours. Pending prompts are deliberately kept
+Any authorized user can answer a prompt, so a person can categorize an
+expense that was added by the `/add` command. Each prompt is single-use and
+expires after 24 hours. Pending prompts are deliberately kept
 only in memory: after a restart an old button reports that it expired, while the
 expense remains safely recorded as `Undefined`. Multiline messages receive a
 separate category prompt for every undefined expense.

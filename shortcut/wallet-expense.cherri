@@ -1,0 +1,53 @@
+#include 'actions/text'
+#include 'actions/web'
+#define color lightblue
+#define glyph creditCard
+
+#question tokenQuestion "Sender bot token" ""
+#question chatQuestion "Group chat ID" ""
+#question botQuestion "Expense bot username, without @" ""
+
+const botToken = text(tokenQuestion)
+const chatId = text(chatQuestion)
+const botName = text(botQuestion)
+
+@subtitle = "{ShortcutInput['Subtitle']}"
+@body = "{ShortcutInput['Body']}"
+
+// Shop name: first word for the big chains, the full subtitle otherwise
+@shop = @subtitle
+if @subtitle contains "Coop" || @subtitle contains "Migros" || @subtitle contains "Denner" {
+    const words = splitText(@subtitle, " ")
+    @shop = getListItem(words, 1)
+}
+const shopSpaced = replaceText("'", " ", @shop)
+// Digits would be read as the amount by the bot, so remove them
+const shopNoDigits = replaceText('[0-9]', "", shopSpaced, true, true)
+const shopCollapsed = replaceText('\s+', " ", shopNoDigits, true, true)
+const shopName = trimWhitespace(shopCollapsed)
+
+// Amount and currency from the body
+const currencyMatches = matchText('\b([A-Za-z]{3})\b', @body)
+const amountMatches = matchText('([0-9][0-9\'’ \x{00A0}.,]*)', @body)
+
+if currencyMatches && amountMatches {
+    const currencyRaw = getMatchGroup(currencyMatches, 1)
+    const currency = uppercase(currencyRaw)
+    const amountRaw = getMatchGroup(amountMatches, 1)
+    const noSeparators = replaceText('[\'’\s\x{00A0}]', "", amountRaw, true, true)
+    const noDots = replaceText('\.(?=[0-9.]*,)', "", noSeparators, true, true)
+    const amount = replaceText(",", ".", noDots)
+    const message = "/add@{botName} {shopName} {amount}{currency}"
+
+    const reply = jsonRequest("https://api.telegram.org/bot{botToken}/sendMessage", "POST", {
+        "chat_id": "{chatId}",
+        "text": "{message}"
+    })
+    const ok = text("{reply['ok']}")
+    if ok != "true" {
+        const description = text("{reply['description']}")
+        showNotification("{message}\n{description}", "Expense not sent")
+    }
+} else {
+    showNotification("{@subtitle}\n{@body}", "Expense not sent")
+}

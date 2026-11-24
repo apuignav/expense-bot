@@ -5,3 +5,7 @@ __pycache__/
 build/
 *.egg-info/
 .env
+
+# Compiled Apple Shortcut
+shortcut/*.shortcut
+.venv/

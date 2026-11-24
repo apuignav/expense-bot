@@ -10,7 +10,6 @@ credentials:
 
 expenses-sheet: "GOOGLE_SHEET_ID"
 nw-sheet: "GOOGLE_CATEGORY_SHEET_ID"
-investment-sheet: "GOOGLE_INVESTMENT_SHEET_ID"
 
 currency:
   reference: CHF
