@@ -1,0 +1,5 @@
+[
+  {"match": "Coop", "name": "Coop"},
+  {"match": "Migros", "name": "Migros"},
+  {"match": "Denner", "name": "Denner"}
+]

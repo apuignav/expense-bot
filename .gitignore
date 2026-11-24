@@ -8,4 +8,8 @@ build/
 
 # Compiled Apple Shortcut
 shortcut/*.shortcut
+shortcut/*.plist
+shortcut/*_processed.cherri
+shortcut/*_unsigned.shortcut
 .venv/
+shortcut/shops.generated.cherri
