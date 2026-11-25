@@ -55,7 +55,7 @@ To add a shop:
 
 1. Add one line to `shortcut/shops.json`.
 2. Run `python3 shortcut/build.py`.
-3. Import the new `.shortcut` file again on both phones.
+3. Import the new `.shortcut` file again on both phones, and add the Wallet trigger again (see below).
 
 The build stops with an error if `shops.json` is not a list of objects with non-empty text fields `match` and `name`.
 
@@ -65,4 +65,4 @@ Open the built `.shortcut` file on the iPhone and add it. The Shortcuts app asks
 
 ## Wallet trigger
 
-The Shortcut has its own trigger for notifications from the Wallet app, so you do not need to create a separate automation. The Shortcut reads the subtitle and the body of the notification that starts it. After the import, open the Shortcut and turn the trigger on if iOS asks for it.
+The Shortcut reads the subtitle and the body of a notification from the Wallet app. iOS removes the trigger when it imports a Shortcut file, so add it by hand after each import: open the Shortcut, add a trigger for notifications from the Wallet app, and make sure that the Subtitle and Body inputs show the notification icon. You do not need a separate automation.
