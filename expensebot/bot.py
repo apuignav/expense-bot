@@ -57,7 +57,7 @@ class SavedExpense:
 
 @dataclass(frozen=True)
 class PendingCategorySelection:
-    """A short-lived category correction offered to one Telegram user."""
+    """A short-lived category correction offered in a chat."""
 
     expense: SavedExpense
     user_id: int
@@ -197,71 +197,24 @@ class ExpenseBot:
             )
 
         @restricted
-        def cb_invest(update, context):
-            """Add investment."""
-            invest_text = " ".join(context.args)
-            logging.debug("Got investment message -> %s", invest_text)
-            try:
-                fund_name, cost, total_units, date = self.add_investment(invest_text)
-                out = "Added investment of {} ({} units) to fund {} on {}".format(
-                    cost, total_units, fund_name, date.strftime("%d/%m/%Y")
-                )
-            except ValueError as error:
-                out = "Adding investment failed -> {}".format(error)
-            except APIError:
-                logging.exception("Google Sheets unavailable while adding investment")
-                out = (
-                    "Google Sheets is temporarily unavailable; saving the investment "
-                    "could not be confirmed. Please check the sheet before retrying."
-                )
-            context.bot.send_message(
-                chat_id=update.message.chat_id,
-                text=out,
-                parse_mode=telegram.ParseMode.MARKDOWN,
+        def cb_messages(update, context):
+            """Answer text messages."""
+            self.process_expense_text(
+                context.bot,
+                update.message.chat_id,
+                update.effective_user.id,
+                update.message.text,
             )
 
         @restricted
-        def cb_messages(update, context):
-            """Answer text messages."""
-            logging.debug("Got message")
-            out = ""
-            undefined_expenses = []
-            for expense_text in update.message.text.split("\n"):
-                logging.info("Got expense -> %s", expense_text)
-                try:
-                    expense = self._save_expense(expense_text)
-                    if out:
-                        out += "\n"
-                    out += "Added expense of {} in '{}' in category '{}' on {}".format(
-                        expense.value,
-                        expense.concept,
-                        expense.category,
-                        expense.date.strftime("%d/%m/%Y"),
-                    )
-                    if expense.category == UNDEFINED_CATEGORY:
-                        undefined_expenses.append(expense)
-                except ValueError as error:
-                    out += "Adding expense failed -> {}".format(error)
-                except APIError:
-                    logging.exception("Google Sheets unavailable while adding expense")
-                    if out:
-                        out += "\n"
-                    out += (
-                        "Google Sheets is temporarily unavailable; saving this expense "
-                        "could not be confirmed. Please check the sheet before retrying."
-                    )
-            context.bot.send_message(
-                chat_id=update.message.chat_id,
-                text=out,
-                parse_mode=telegram.ParseMode.MARKDOWN,
+        def cb_add(update, context):
+            """Add the expenses written after the /add command."""
+            self.process_expense_text(
+                context.bot,
+                update.message.chat_id,
+                update.effective_user.id,
+                self.command_argument_text(update.message.text),
             )
-            for expense in undefined_expenses:
-                self.send_category_prompt(
-                    context.bot,
-                    update.message.chat_id,
-                    update.effective_user.id,
-                    expense,
-                )
 
         if not bot_config:
             bot_config = self._config["credentials"]["telegram"]
@@ -274,9 +227,7 @@ class ExpenseBot:
         )
         updater.dispatcher.add_handler(CommandHandler("getCurrency", cb_get_currency))
         updater.dispatcher.add_handler(CommandHandler("test", cb_test, pass_args=True))
-        updater.dispatcher.add_handler(
-            CommandHandler("invest", cb_invest, pass_args=True)
-        )
+        updater.dispatcher.add_handler(CommandHandler("add", cb_add))
         updater.dispatcher.add_handler(
             CallbackQueryHandler(
                 self.handle_category_callback,
@@ -287,6 +238,53 @@ class ExpenseBot:
         updater.dispatcher.add_handler(MessageHandler(Filters.text, cb_messages))
         updater.dispatcher.add_error_handler(self.on_error)
         return updater
+
+    @staticmethod
+    def command_argument_text(message_text):
+        """Return the text after a command and its optional @botname."""
+        parts = (message_text or "").split(None, 1)
+        if len(parts) < 2:
+            return ""
+        return parts[1]
+
+    def process_expense_text(self, telegram_bot, chat_id, user_id, text):
+        """Save one expense per line of text and reply in the chat."""
+        logging.debug("Got message")
+        out = ""
+        undefined_expenses = []
+        for expense_text in text.split("\n"):
+            logging.info("Got expense -> %s", expense_text)
+            try:
+                expense = self._save_expense(expense_text)
+                if out:
+                    out += "\n"
+                out += "Added expense of {} in '{}' in category '{}' on {}".format(
+                    expense.value,
+                    expense.concept,
+                    expense.category,
+                    expense.date.strftime("%d/%m/%Y"),
+                )
+                if expense.category == UNDEFINED_CATEGORY:
+                    undefined_expenses.append(expense)
+            except ValueError as error:
+                if out:
+                    out += "\n"
+                out += "Adding expense failed -> {}".format(error)
+            except APIError:
+                logging.exception("Google Sheets unavailable while adding expense")
+                if out:
+                    out += "\n"
+                out += (
+                    "Google Sheets is temporarily unavailable; saving this expense "
+                    "could not be confirmed. Please check the sheet before retrying."
+                )
+        telegram_bot.send_message(
+            chat_id=chat_id,
+            text=out,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+        )
+        for expense in undefined_expenses:
+            self.send_category_prompt(telegram_bot, chat_id, user_id, expense)
 
     @staticmethod
     def on_error(update, context):
@@ -555,7 +553,7 @@ class ExpenseBot:
                 ),
             )
             return
-        pending = self._pending_category_selection(token, user_id)
+        pending = self._pending_category_selection(token)
         telegram_bot.send_message(
             chat_id=chat_id,
             text="Choose a category for '{} — {}':".format(
@@ -564,22 +562,22 @@ class ExpenseBot:
             reply_markup=self._category_keyboard(token, pending.categories),
         )
 
-    def _pending_category_selection(self, token, user_id):
-        """Return an unexpired pending correction belonging to the user."""
+    def _pending_category_selection(self, token):
+        """Return an unexpired pending correction."""
         with self._pending_categories_lock:
             pending = self._pending_categories.get(token)
-            if pending is None or pending.user_id != user_id:
+            if pending is None:
                 return None
             if time.monotonic() - pending.created_at >= CATEGORY_SELECTION_TTL:
                 self._pending_categories.pop(token, None)
                 return None
             return pending
 
-    def _claim_category_selection(self, token, user_id):
+    def _claim_category_selection(self, token):
         """Atomically claim a pending correction for one callback."""
         with self._pending_categories_lock:
             pending = self._pending_categories.get(token)
-            if pending is None or pending.user_id != user_id:
+            if pending is None:
                 return None
             if time.monotonic() - pending.created_at >= CATEGORY_SELECTION_TTL:
                 self._pending_categories.pop(token, None)
@@ -620,7 +618,7 @@ class ExpenseBot:
             query.answer("This category choice is invalid.", show_alert=True)
             return
 
-        pending = self._pending_category_selection(token, user_id)
+        pending = self._pending_category_selection(token)
         if pending is None:
             query.answer(
                 "This category choice has expired or was already used.",
@@ -629,7 +627,7 @@ class ExpenseBot:
             return
 
         if choice == "skip":
-            pending = self._claim_category_selection(token, user_id)
+            pending = self._claim_category_selection(token)
             if pending is None:
                 query.answer(
                     "This category choice has expired or was already used.",
@@ -655,7 +653,7 @@ class ExpenseBot:
             query.answer("This category choice is invalid.", show_alert=True)
             return
 
-        pending = self._claim_category_selection(token, user_id)
+        pending = self._claim_category_selection(token)
         if pending is None:
             query.answer(
                 "This category choice has expired or was already used.",
@@ -764,50 +762,6 @@ class ExpenseBot:
         """Add expense to the corresponding sheet."""
         expense = self._save_expense(expense_text, spreadsheet_id)
         return expense.concept, expense.value, expense.category, expense.date
-
-    def add_investment(self, investment_text, spreadsheet_id=None):
-        """Add investment in the corresponding sheet."""
-
-        def init_invest_worksheet(sheet):
-            sheet.update_acell("A1", "Concepto")
-            sheet.update_acell("B1", "Fecha")
-            sheet.update_acell("C1", "Cost")
-            sheet.update_acell("D1", "Number of units")
-            sheet.update_acell("E1", "=COUNT(A2:A)")
-
-        import datefinder
-
-        found_dates = list(datefinder.find_dates(investment_text, source=True))
-        if len(found_dates) > 1:
-            logging.error("Found too many dates in text, ignoring -> %s", found_dates)
-            date = None
-        elif len(found_dates) == 1:
-            date, source_date = found_dates[0]
-            investment_text = investment_text.replace(source_date, "").strip()
-            logging.debug("Found date -> %s", date)
-        else:
-            date = None
-        if not date:
-            date = datetime.datetime.today()
-        # Name, cost, total units (, date)
-        *fund_name, cost, total_units = investment_text.split()
-        fund_name = " ".join(fund_name)
-        if not spreadsheet_id:
-            spreadsheet_id = self._config["investment-sheet"]
-        spreadsheet = gsheet.authorize(self._config).open_by_key(spreadsheet_id)
-        worksheet_name = "{} Trades".format(date.year)
-        worksheet = gsheet.get_worksheet(
-            spreadsheet, worksheet_name, True, init_invest_worksheet
-        )
-        if not worksheet:
-            logging.error("Error getting worksheet %s", worksheet_name)
-            raise ValueError("Error getting worksheet -> {}".format(worksheet_name))
-        row_to_update = int(worksheet.acell("E1").value) + 2
-        worksheet.update_cell(row_to_update, 1, date.strftime("%d/%m/%Y %H:%M:%S"))
-        worksheet.update_cell(row_to_update, 2, fund_name)
-        worksheet.update_cell(3, cost)
-        worksheet.update_cell(3, total_units)
-        return fund_name, cost, total_units, date
 
     def start(self):
         """Start running."""
